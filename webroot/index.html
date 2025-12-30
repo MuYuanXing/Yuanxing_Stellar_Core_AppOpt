@@ -1,1 +1,823 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>星驰引擎_星核线程</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<script>(()=>{const t=localStorage.getItem("starchaser-theme");const p=window.matchMedia&&window.matchMedia("(prefers-color-scheme:dark)").matches;if(t==="dark"||(!t&&p))document.body.classList.add("dark-mode");})();</script>
 
+    <div class="ui-container">
+        <div class="ui-content log-collapsed" id="page-home">
+            <div class="page-title">
+                星驰引擎_星核线程
+                <button class="theme-toggle" id="theme-toggle" aria-label="切换主题">
+                    <svg class="theme-icon sun" viewBox="0 0 24 24">
+                        <circle cx="12" cy="12" r="5"/>
+                        <line x1="12" y1="1" x2="12" y2="3"/>
+                        <line x1="12" y1="21" x2="12" y2="23"/>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                        <line x1="1" y1="12" x2="3" y2="12"/>
+                        <line x1="21" y1="12" x2="23" y2="12"/>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                    </svg>
+                    <svg class="theme-icon moon" viewBox="0 0 24 24">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="glass-card">
+                <div class="card-header">
+                    <span class="card-title">设备信息</span>
+                </div>
+                <div class="device-info">
+                    <div class="info-row">
+                        <span class="info-label">机型名称</span>
+                        <span class="info-value" id="market-name">加载中...</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">机型型号</span>
+                        <span class="info-value" id="device-model">加载中...</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">处理器</span>
+                        <span class="info-value" id="soc-model">加载中...</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">安卓版本</span>
+                        <span class="info-value" id="android-ver">加载中...</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">内核版本</span>
+                        <span class="info-value" id="kernel-ver">加载中...</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">可用核心</span>
+                        <span class="info-value" id="all-cores">加载中...</span>
+                    </div>
+                </div>
+            </div>
+            <div class="glass-card">
+                <div class="card-header">
+                    <span class="card-title">服务控制</span>
+                    <div class="status-badge" id="service-status">检测中...</div>
+                </div>
+                <div class="service-control">
+                    <div class="control-item-group">
+                        <div class="control-row">
+                            <span class="control-label">检查间隔 (秒)</span>
+                            <div class="interval-selector">
+                                <button class="interval-btn" data-delta="-1">-</button>
+                                <span class="interval-value" id="interval-value">2</span>
+                                <button class="interval-btn" data-delta="1">+</button>
+                            </div>
+                        </div>
+                        <div class="control-desc">监测服务进程存活状态，异常时自动拉起</div>
+                    </div>
+                    <div class="control-item-group">
+                        <div class="control-row">
+                            <span class="control-label">全局禁用 oiface</span>
+                            <label class="switch">
+                                <input type="checkbox" id="oiface-disable-toggle">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <div class="control-desc">强制停止系统 oiface 服务</div>
+                    </div>
+                    <div class="control-item-group" id="oiface-smart-group">
+                        <div class="control-row">
+                            <span class="control-label">全局智能 oiface</span>
+                            <label class="switch">
+                                <input type="checkbox" id="oiface-smart-toggle">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <div class="control-desc">前台应用在规则列表中时自动禁用 oiface</div>
+                    </div>
+                    <div class="control-item-group hidden" id="oiface-interval-group">
+                        <div class="control-row">
+                            <span class="control-label">智能检测间隔 (秒)</span>
+                            <div class="interval-selector">
+                                <button class="interval-btn" data-target="oiface" data-delta="-1">-</button>
+                                <span class="interval-value" id="oiface-interval-value">3</span>
+                                <button class="interval-btn" data-target="oiface" data-delta="1">+</button>
+                            </div>
+                        </div>
+                        <div class="control-desc">检测前台应用变化的频率</div>
+                    </div>
+                </div>
+            </div>
+            <div class="glass-card log-card-collapsible collapsed">
+                <div class="card-header log-header-toggle" id="log-header-toggle">
+                    <span class="card-title">服务日志</span>
+                    <div class="log-header-right">
+                        <div class="card-actions">
+                            <span class="card-action" id="refresh-log">刷新</span>
+                            <span class="card-action danger" id="clear-log">清空</span>
+                        </div>
+                        <span class="log-expand-hint" id="log-expand-hint">点击展开</span>
+                        <span class="log-collapse-icon" id="log-collapse-icon">▼</span>
+                    </div>
+                </div>
+                <div class="log-content-wrapper collapsed" id="log-content-wrapper">
+                    <div class="log-filter">
+                        <span class="log-filter-tag active" data-filter="all">全部</span>
+                        <span class="log-filter-tag" data-filter="service">服务</span>
+                        <span class="log-filter-tag" data-filter="cloud">云端配置</span>
+                    </div>
+                    <div class="log-viewer log-viewer-home" id="log-viewer">加载中...</div>
+                </div>
+            </div>
+        </div>
+        <div class="ui-content hidden" id="page-cloud">
+            <div class="page-title">云端配置</div>
+            <div class="glass-card cloud-card-full">
+                <div class="card-header">
+                    <span class="card-title">配置列表</span>
+                    <div class="card-actions">
+                        <span class="card-action" id="cloud-refresh">刷新</span>
+                        <span class="card-action" id="cloud-mine">我的</span>
+                        <span class="card-action" id="cloud-upload">上传</span>
+                        <span class="card-action" id="cloud-account">账户</span>
+                    </div>
+                </div>
+                <div class="cloud-search-box">
+                    <input type="text" class="ui-input cloud-search-input" id="cloud-search" placeholder="搜索配置...">
+                </div>
+                <div class="cloud-filter-section">
+                    <div class="cloud-filter-label">来源</div>
+                    <div class="cloud-categories" id="cloud-source-categories">
+                        <span class="category-tag active" data-source="all">全部</span>
+                        <span class="category-tag" data-source="official">官方配置</span>
+                        <span class="category-tag" data-source="community">社区配置</span>
+                    </div>
+                </div>
+                <div class="cloud-filter-section">
+                    <div class="cloud-filter-label">类别</div>
+                    <div class="cloud-categories" id="cloud-type-categories">
+                        <span class="category-tag active" data-category="all">全部</span>
+                        <span class="category-tag" data-category="general">综合</span>
+                        <span class="category-tag" data-category="game">游戏</span>
+                        <span class="category-tag" data-category="daily">日用</span>
+                    </div>
+                </div>
+                <div class="cloud-list cloud-list-full" id="cloud-list">
+                    <div class="cloud-loading">点击刷新加载云端配置</div>
+                </div>
+            </div>
+        </div>
+        <div class="ui-content hidden" id="page-rules">
+            <div class="page-title">规则列表</div>
+            <div class="glass-card rules-card-full">
+                <div class="card-header">
+                    <span class="card-title">规则列表</span>
+                    <div class="card-actions">
+                        <span class="card-action" id="import-config">导入</span>
+                        <span class="card-action" id="export-config">导出</span>
+                        <span class="card-action danger" id="clear-rules">清空</span>
+                        <span class="card-action" id="add-rule">添加</span>
+                    </div>
+                </div>
+                <div class="config-source-card">
+                    <div class="config-source-header">
+                        <span class="config-source-title">配置来源</span>
+                        <span class="check-update-btn" id="check-update-btn">检查更新</span>
+                    </div>
+                    <div class="config-source-list" id="config-source-list">
+                        <div class="config-source-item local">本地配置</div>
+                    </div>
+                </div>
+                <div class="rules-search-box">
+                    <input type="text" class="ui-input rules-search-input" id="rules-search" placeholder="搜索应用名称或包名...">
+                </div>
+                <div class="rules-container rules-container-full" id="rules-container"></div>
+            </div>
+        </div>
+        <div class="ui-content hidden" id="page-performance">
+            <div class="page-title">性能配置</div>
+            <div class="glass-card">
+                <div class="card-header">
+                    <span class="card-title">默认配置</span>
+                    <label class="switch">
+                        <input type="checkbox" id="perf-default-toggle">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="perf-default-content">
+                    <div class="control-item-group">
+                        <div class="control-row">
+                            <span class="control-label">检测间隔 (秒)</span>
+                            <div class="interval-selector">
+                                <button class="interval-btn" data-target="perf" data-delta="-1">-</button>
+                                <span class="interval-value" id="perf-interval-value">1</span>
+                                <button class="interval-btn" data-target="perf" data-delta="1">+</button>
+                            </div>
+                        </div>
+                        <div class="control-desc">前台应用变化检测频率</div>
+                    </div>
+                    <div class="perf-expand-item" id="perf-scheduler-expand">
+                        <div class="perf-expand-header">
+                            <span class="perf-expand-label">IO调度器</span>
+                            <span class="perf-expand-value" id="perf-scheduler-value">-</span>
+                        </div>
+                        <div class="perf-expand-content">
+                            <div class="option-grid" id="default-scheduler-options"></div>
+                        </div>
+                    </div>
+                    <div class="perf-expand-item" id="perf-readahead-expand">
+                        <div class="perf-expand-header">
+                            <span class="perf-expand-label">预读取大小</span>
+                            <span class="perf-expand-value" id="perf-readahead-value">-</span>
+                        </div>
+                        <div class="perf-expand-content">
+                            <div class="option-grid" id="default-readahead-options"></div>
+                        </div>
+                    </div>
+                    <div class="perf-expand-item" id="perf-governor-expand">
+                        <div class="perf-expand-header">
+                            <span class="perf-expand-label">CPU调速器</span>
+                            <span class="perf-expand-value" id="perf-governor-value">-</span>
+                        </div>
+                        <div class="perf-expand-content">
+                            <div class="option-grid" id="default-governor-options"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="glass-card perf-card-full">
+                <div class="card-header">
+                    <span class="card-title">应用专属配置</span>
+                    <div class="card-header-right">
+                        <label class="switch">
+                            <input type="checkbox" id="perf-app-toggle">
+                            <span class="slider"></span>
+                        </label>
+                        <div class="card-actions">
+                            <span class="card-action" id="add-perf-app">添加</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="perf-search-box">
+                    <input type="text" class="ui-input perf-search-input" id="perf-search" placeholder="搜索应用名称或包名...">
+                </div>
+                <div class="perf-app-container" id="perf-app-container"></div>
+            </div>
+        </div>
+        <div class="ui-content hidden" id="page-about">
+            <div class="page-title">作者相关</div>
+            <div class="glass-card">
+                <div class="card-header">
+                    <span class="card-title">作者信息</span>
+                </div>
+                <div class="about-links">
+                    <div class="about-item" id="coolapk-link">
+                        <div class="about-icon">
+                            <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+                        </div>
+                        <div class="about-content">
+                            <div class="about-title">酷安关注</div>
+                            <div class="about-subtitle">穆远星</div>
+                        </div>
+                    </div>
+                    <div class="about-item" id="qq-link">
+                        <div class="about-icon">
+                            <svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
+                        </div>
+                        <div class="about-content">
+                            <div class="about-title">QQ群</div>
+                            <div class="about-subtitle">反馈请进群，酷安不接受反馈</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="glass-card">
+                <div class="card-header">
+                    <span class="card-title">支持作者</span>
+                </div>
+                <div class="about-links">
+                    <div class="about-item" id="donate-wx">
+                        <div class="about-icon wxpay">
+                            <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"/></svg>
+                        </div>
+                        <div class="about-content">
+                            <div class="about-title">微信支付</div>
+                            <div class="about-subtitle">感谢您的支持</div>
+                        </div>
+                    </div>
+                    <div class="about-item" id="donate-ali">
+                        <div class="about-icon alipay">
+                            <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 4h2v4h4v2h-4v4h-2v-4H7v-2h4z"/></svg>
+                        </div>
+                        <div class="about-content">
+                            <div class="about-title">支付宝</div>
+                            <div class="about-subtitle">感谢您的支持</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="glass-card">
+                <div class="card-header">
+                    <span class="card-title">特别致谢</span>
+                </div>
+                <div class="about-links">
+                    <div class="about-item" id="link-suto">
+                        <div class="about-icon" style="background:#FF9500;">
+                            <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+                        </div>
+                        <div class="about-content">
+                            <div class="about-title">AppOpt 核心内容致谢 SutoLiu</div>
+                            <div class="about-subtitle">星核线程遵循 GPL 开源许可</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="ui-tabbar">
+            <div class="tab-item" data-page="rules">
+                <svg class="tab-icon" viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
+                <span class="tab-label">规则列表</span>
+            </div>
+            <div class="tab-item" data-page="cloud">
+                <svg class="tab-icon" viewBox="0 0 24 24"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/></svg>
+                <span class="tab-label">云端配置</span>
+            </div>
+            <div class="tab-item active" data-page="home">
+                <svg class="tab-icon" viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+                <span class="tab-label">主页</span>
+            </div>
+            <div class="tab-item" data-page="performance">
+                <svg class="tab-icon" viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+                <span class="tab-label">性能配置</span>
+            </div>
+            <div class="tab-item" data-page="about">
+                <svg class="tab-icon" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+                <span class="tab-label">作者相关</span>
+            </div>
+        </div>
+    </div>
+    <div class="ui-modal" id="rule-modal">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <span class="modal-cancel" id="rule-cancel">取消</span>
+                <span class="modal-title">添加规则</span>
+                <span class="modal-done" id="rule-done">保存</span>
+            </div>
+            <div class="input-group">
+                <input type="text" class="ui-input" id="rule-app-name" placeholder="应用名称 (可选，用于显示)">
+                <input type="text" class="ui-input" id="rule-package" placeholder="包名 (如: com.tencent.mm)">
+                <div class="section-title">规则配置 (每行一条，填写CPU范围后保存)</div>
+                <textarea class="ui-textarea" id="rule-content" placeholder="com.tencent.mm=0-3,4-6
+com.tencent.mm{RenderThread}=7
+com.tencent.mm{Unity*}=4-7"></textarea>
+                <div class="rule-tips">
+                    <p>进程: 包名=CPU范围</p>
+                    <p>线程: 包名{线程名}=CPU范围</p>
+                    <p>通配符: * 任意  ? 单字符  [0-9] 数字</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="ui-modal" id="edit-modal">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <span class="modal-cancel" id="edit-cancel">取消</span>
+                <span class="modal-title">编辑规则</span>
+                <span class="modal-done" id="edit-done">保存</span>
+            </div>
+            <div class="input-group">
+                <div class="edit-app-header">
+                    <span id="edit-app-name"></span>
+                </div>
+                <input type="text" class="ui-input" id="edit-app-name-input" placeholder="应用名称 (可选)">
+                <input type="hidden" id="edit-package">
+                <textarea class="ui-textarea" id="edit-content"></textarea>
+            </div>
+        </div>
+    </div>
+    <div class="ui-modal" id="cloud-detail-modal">
+        <div class="modal-content modal-large modal-flex">
+            <div class="modal-header">
+                <span class="modal-cancel" id="cloud-detail-cancel">关闭</span>
+                <span class="modal-title">配置详情</span>
+                <span class="modal-done" id="cloud-detail-preview">预览</span>
+            </div>
+            <div class="cloud-detail-body" id="cloud-detail-body"></div>
+            <div class="cloud-detail-footer" id="cloud-detail-footer">
+                <div class="cloud-apply-btn" id="cloud-apply-btn">应用此配置</div>
+            </div>
+        </div>
+    </div>
+    <div class="ui-modal" id="apply-mode-modal">
+        <div class="modal-content">
+            <div class="modal-header" style="justify-content:center; border-bottom:0;">
+                <span class="modal-title">选择应用方式</span>
+            </div>
+            <div class="mode-list">
+                <div class="apply-mode-item" data-mode="replace">
+                    <span class="mode-name">替换</span>
+                    <span class="mode-desc">清空现有规则，使用新配置</span>
+                </div>
+                <div class="apply-mode-item" data-mode="merge">
+                    <span class="mode-name">合并</span>
+                    <span class="mode-desc">保留现有规则，智能合并新配置</span>
+                </div>
+                <div class="apply-mode-item" data-mode="append">
+                    <span class="mode-name">追加</span>
+                    <span class="mode-desc">在现有规则后追加新配置</span>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <div class="modal-btn cancel" id="apply-mode-cancel">取消</div>
+            </div>
+        </div>
+    </div>
+    <div class="ui-modal" id="download-mode-modal">
+        <div class="modal-content">
+            <div class="modal-header" style="justify-content:center; border-bottom:0;">
+                <span class="modal-title">下载方式</span>
+            </div>
+            <div class="mode-list">
+                <div class="download-mode-item" data-mode="all">
+                    <span class="mode-name">下载全部</span>
+                    <span class="mode-desc">下载配置中的所有应用规则</span>
+                </div>
+                <div class="download-mode-item" data-mode="select">
+                    <span class="mode-name">选择应用</span>
+                    <span class="mode-desc">选择需要下载的特定应用</span>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <div class="modal-btn cancel" id="download-mode-cancel">取消</div>
+            </div>
+        </div>
+    </div>
+    <div class="ui-modal" id="select-apps-modal">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <span class="modal-cancel" id="select-apps-cancel">取消</span>
+                <span class="modal-title">选择应用</span>
+                <span class="modal-done" id="select-apps-done">确认</span>
+            </div>
+            <div class="select-apps-search-box">
+                <input type="text" class="ui-input select-apps-search-input" id="select-apps-search" placeholder="搜索应用名称或包名...">
+            </div>
+            <div class="select-apps-actions">
+                <span class="select-apps-action" id="select-all-apps">全选</span>
+                <span class="select-apps-action" id="deselect-all-apps">全不选</span>
+            </div>
+            <div class="select-apps-list" id="select-apps-list"></div>
+        </div>
+    </div>
+    <div class="ui-modal" id="upload-modal">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <span class="modal-cancel" id="upload-cancel">取消</span>
+                <span class="modal-title">上传配置</span>
+                <span class="modal-done" id="upload-done">上传</span>
+            </div>
+            <div class="input-group" id="upload-form">
+                <input type="text" class="ui-input" id="upload-auth" autocomplete="nickname" data-form-type="other" data-lpignore="true" spellcheck="false" placeholder="昵称（用于显示）">
+                <input type="text" class="ui-input" id="upload-name" placeholder="配置名称">
+                <input type="number" step="0.1" min="1" class="ui-input" id="upload-version" placeholder="版本号 (如: 1、1.5、2)">
+                <textarea class="ui-textarea upload-desc-textarea" id="upload-desc" placeholder="配置描述"></textarea>
+                <div class="ui-select-custom" id="upload-category-wrapper">
+                    <div class="ui-select-display" id="upload-category-display">
+                        <span id="upload-category-text">综合</span>
+                        <span class="ui-select-arrow">▼</span>
+                    </div>
+                    <input type="hidden" id="upload-category" value="general">
+                    <div class="ui-select-options hidden" id="upload-category-options">
+                        <div class="ui-select-option active" data-value="general">综合</div>
+                        <div class="ui-select-option" data-value="game">游戏</div>
+                        <div class="ui-select-option" data-value="daily">日用</div>
+                    </div>
+                </div>
+                <input type="text" class="ui-input" id="upload-processors" placeholder="适配处理器 (空格分隔，如: 8Gen3 8E)">
+                <input type="text" class="ui-input" id="upload-tags" placeholder="标签 (空格分隔)">
+                <div class="upload-base-info hidden" id="upload-base-info"></div>
+                <div class="upload-notice">上传即表示同意公开分享此配置</div>
+            </div>
+            <div class="upload-progress" id="upload-progress">
+                <div class="upload-spinner"></div>
+                <div class="upload-status" id="upload-status">正在上传...</div>
+            </div>
+        </div>
+    </div>
+    <div class="ui-modal" id="preview-modal">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <span class="modal-cancel" id="preview-cancel">关闭</span>
+                <span class="modal-title">配置预览</span>
+            </div>
+            <div class="input-group">
+                <textarea class="ui-textarea preview-textarea" id="preview-content" readonly></textarea>
+            </div>
+        </div>
+    </div>
+    <div class="ui-modal" id="my-configs-modal">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <span class="modal-cancel" id="my-configs-cancel">关闭</span>
+                <span class="modal-title">我的配置</span>
+                <span class="modal-done" id="my-configs-refresh">刷新</span>
+            </div>
+            <div class="my-configs-search-box">
+                <input type="text" class="ui-input my-configs-search-input" id="my-configs-search" placeholder="搜索我的配置...">
+            </div>
+            <div class="my-configs-body" id="my-configs-body">
+                <div class="cloud-loading">加载中...</div>
+            </div>
+        </div>
+    </div>
+    <div class="ui-modal" id="config-update-modal">
+        <div class="modal-content modal-large modal-scrollable">
+            <div class="modal-header">
+                <span class="modal-cancel" id="config-update-cancel">取消</span>
+                <span class="modal-title">修改配置</span>
+                <span class="modal-done" id="config-update-done">提交修改</span>
+            </div>
+            <div class="input-group config-update-form" id="config-update-form">
+                <div class="config-update-section">
+                    <div class="config-update-section-title">基本信息</div>
+                    <input type="hidden" id="config-update-objectid">
+                    <div class="input-label">配置名称</div>
+                    <input type="text" class="ui-input" id="config-update-name" placeholder="配置名称">
+                    <div class="input-label">版本号 <span class="input-hint">(修改后自动+0.1)</span></div>
+                    <input type="number" step="0.1" min="1" class="ui-input" id="config-update-version" placeholder="版本号">
+                    <div class="input-label">配置描述</div>
+                    <textarea class="ui-textarea config-update-desc" id="config-update-desc" placeholder="配置描述"></textarea>
+                    <div class="input-label">分类</div>
+                    <div class="ui-select-custom" id="config-update-category-wrapper">
+                        <div class="ui-select-display" id="config-update-category-display">
+                            <span id="config-update-category-text">综合</span>
+                            <span class="ui-select-arrow">▼</span>
+                        </div>
+                        <input type="hidden" id="config-update-category" value="general">
+                        <div class="ui-select-options hidden" id="config-update-category-options">
+                            <div class="ui-select-option" data-value="general">综合</div>
+                            <div class="ui-select-option" data-value="game">游戏</div>
+                            <div class="ui-select-option" data-value="daily">日用</div>
+                        </div>
+                    </div>
+                    <div class="input-label">适配处理器 <span class="input-hint">(空格分隔)</span></div>
+                    <input type="text" class="ui-input" id="config-update-processors" placeholder="适配处理器">
+                    <div class="input-label">标签 <span class="input-hint">(空格分隔)</span></div>
+                    <input type="text" class="ui-input" id="config-update-tags" placeholder="标签">
+                </div>
+                <div class="config-update-section">
+                    <div class="config-update-section-title">规则内容</div>
+                    <textarea class="ui-textarea config-update-content" id="config-update-content" placeholder="规则内容"></textarea>
+                </div>
+                <div class="config-update-section">
+                    <div class="config-update-section-title">修改说明 <span class="required">*必填</span></div>
+                    <input type="text" class="ui-input" id="config-update-changelog" placeholder="说明本次修改的内容（必填）">
+                </div>
+                <div class="config-update-notice">
+                    <div class="notice-icon">⚠️</div>
+                    <div class="notice-text">修改将立即生效并发送通知</div>
+                </div>
+            </div>
+            <div class="upload-progress" id="config-update-progress">
+                <div class="upload-spinner"></div>
+                <div class="upload-status" id="config-update-status">正在提交...</div>
+            </div>
+        </div>
+    </div>
+    <div class="ui-modal" id="priority-modal">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <span class="modal-cancel" id="priority-cancel">取消</span>
+                <span class="modal-title">设置优先级</span>
+                <span class="modal-done" id="priority-done">保存</span>
+            </div>
+            <div class="input-group">
+                <div class="priority-app-info" id="priority-app-info"></div>
+                <div class="priority-section">
+                    <div class="priority-section-title">CPU 优先级 (nice)</div>
+                    <div class="priority-slider-container">
+                        <input type="range" class="priority-slider" id="nice-slider" min="-20" max="19" step="1" value="0">
+                        <div class="slider-labels">
+                            <span>-20 (最高)</span>
+                            <span class="slider-value" id="nice-value">0</span>
+                            <span>19 (最低)</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="priority-section">
+                    <div class="priority-section-title">I/O 优先级</div>
+                    <div class="io-priority-options" id="io-options">
+                        <div class="io-option" data-class="1" data-level="0">
+                            <div class="io-option-name">实时</div>
+                            <div class="io-option-desc">最高级</div>
+                        </div>
+                        <div class="io-option selected" data-class="2" data-level="4">
+                            <div class="io-option-name">尽力</div>
+                            <div class="io-option-desc">默认</div>
+                        </div>
+                        <div class="io-option" data-class="3" data-level="7">
+                            <div class="io-option-name">空闲</div>
+                            <div class="io-option-desc">后台用</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="priority-hint">
+                    <span>💡</span>
+                    <span>游戏进程建议：nice=-10~-15，IO=实时</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="ui-modal" id="check-update-modal">
+        <div class="modal-content modal-large modal-scrollable">
+            <div class="modal-header">
+                <span class="modal-cancel" id="check-update-cancel">取消</span>
+                <span class="modal-title">检查更新</span>
+                <span class="modal-done" id="check-update-done">确认更新</span>
+            </div>
+            <div class="check-update-body" id="check-update-body">
+                <div class="cloud-loading">检查中...</div>
+            </div>
+        </div>
+    </div>
+    <div class="ui-modal" id="conflict-modal">
+        <div class="modal-content modal-large modal-scrollable">
+            <div class="modal-header">
+                <span class="modal-cancel" id="conflict-cancel">取消</span>
+                <span class="modal-title">检测到冲突</span>
+                <span class="modal-done" id="conflict-done">确认</span>
+            </div>
+            <div class="conflict-body" id="conflict-body"></div>
+        </div>
+    </div>
+    <div class="ui-modal" id="import-modal">
+        <div class="modal-content">
+            <div class="modal-header" style="justify-content:center; border-bottom:0;">
+                <span class="modal-title">导入配置</span>
+            </div>
+            <div class="import-body">
+                <div class="import-desc">将从以下路径读取配置文件：</div>
+                <div class="import-path">/storage/emulated/0/applist.conf</div>
+                <div class="import-hint">请确保文件存在后点击导入</div>
+            </div>
+            <div class="modal-footer import-footer">
+                <div class="modal-btn cancel" id="import-cancel">取消</div>
+                <div class="modal-btn primary" id="import-confirm">导入</div>
+            </div>
+        </div>
+    </div>
+    <div class="ui-modal" id="import-conflict-modal">
+        <div class="modal-content modal-large modal-scrollable">
+            <div class="modal-header" style="justify-content:center; border-bottom:0;">
+                <span class="modal-title">检测到冲突</span>
+            </div>
+            <div class="import-conflict-body" id="import-conflict-body"></div>
+            <div class="modal-footer import-conflict-footer">
+                <div class="modal-btn" id="import-conflict-overwrite">覆盖冲突</div>
+                <div class="modal-btn" id="import-conflict-skip">跳过冲突</div>
+                <div class="modal-btn cancel" id="import-conflict-cancel">取消</div>
+            </div>
+        </div>
+    </div>
+    <div class="ui-modal" id="perf-app-modal">
+        <div class="modal-content modal-large modal-scrollable">
+            <div class="modal-header">
+                <span class="modal-cancel" id="perf-app-cancel">取消</span>
+                <span class="modal-title" id="perf-app-modal-title">添加应用配置</span>
+                <span class="modal-done" id="perf-app-done">保存</span>
+            </div>
+            <div class="input-group perf-app-form">
+                <div class="perf-app-select-section" id="perf-app-select-section">
+                    <div class="section-title">选择应用</div>
+                    <div class="perf-app-select-search">
+                        <input type="text" class="ui-input" id="perf-app-select-search" placeholder="搜索或输入包名...">
+                    </div>
+                    <div class="perf-app-select-list" id="perf-app-select-list"></div>
+                </div>
+                <input type="hidden" id="perf-app-package">
+                <div class="perf-app-name-display hidden" id="perf-app-name-display"></div>
+                <div class="section-title">性能配置</div>
+                <div class="perf-config-container">
+                    <div class="perf-option-group">
+                        <div class="perf-option-row">
+                            <span class="perf-option-label">禁用 oiface</span>
+                            <label class="switch">
+                                <input type="checkbox" id="perf-app-oiface">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="perf-option-group">
+                        <div class="section-title small">IO调度器</div>
+                        <div class="option-grid modal-option-grid" id="perf-app-scheduler"></div>
+                    </div>
+                    <div class="perf-option-group">
+                        <div class="section-title small">预读取大小</div>
+                        <div class="option-grid modal-option-grid" id="perf-app-readahead"></div>
+                    </div>
+                    <div class="perf-option-group">
+                        <div class="section-title small">CPU调速器</div>
+                        <div class="option-grid modal-option-grid" id="perf-app-governor"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop hidden" id="qr-modal">
+        <div class="modal-panel">
+            <img id="qr-image" src="" class="qr-big">
+        </div>
+    </div>
+    <div class="ui-modal" id="device-register-modal">
+        <div class="modal-content modal-large">
+            <div class="modal-header" style="justify-content:center; border-bottom:0;">
+                <span class="modal-title">🎉 欢迎使用星核线程</span>
+            </div>
+            <div class="register-body">
+                <div class="register-section">
+                    <div class="register-label">设置昵称（必填，不可修改）</div>
+                    <input type="text" class="register-input" id="register-nickname" placeholder="1-10字，仅中英文数字" maxlength="10">
+                </div>
+                <div class="register-section">
+                    <div class="register-label">设置管理密码（必填）</div>
+                    <input type="password" class="register-input" id="register-password" placeholder="至少4位，用于找回账户">
+                </div>
+                <div class="register-section">
+                    <div class="register-label">您的设备恢复码</div>
+                    <div class="recovery-code-box">
+                        <span class="recovery-code" id="recovery-code-display">填写信息后生成</span>
+                        <button class="copy-btn" id="copy-recovery-code">复制</button>
+                    </div>
+                    <div class="register-warning">⚠️ 请截图保存！刷机后可用于找回账户</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <div class="modal-btn primary" id="register-done">注册</div>
+            </div>
+        </div>
+    </div>
+    <div class="ui-modal" id="device-choose-modal">
+        <div class="modal-content">
+            <div class="modal-header" style="justify-content:center; border-bottom:0;">
+                <span class="modal-title">检测到新设备</span>
+            </div>
+            <div class="choose-body">
+                <div class="choose-desc">请选择操作方式</div>
+            </div>
+            <div class="modal-footer choose-footer">
+                <div class="modal-btn" id="choose-new">创建新账户</div>
+                <div class="modal-btn primary" id="choose-recover">找回已有账户</div>
+            </div>
+        </div>
+    </div>
+    <div class="ui-modal" id="device-recover-modal">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <span class="modal-cancel" id="recover-cancel">返回</span>
+                <span class="modal-title">找回账户</span>
+                <span class="modal-done" id="recover-done">确认</span>
+            </div>
+            <div class="recover-body">
+                <div class="register-section">
+                    <div class="register-label">请输入恢复码或管理密码</div>
+                    <input type="text" class="register-input" id="recover-input" placeholder="恢复码 或 管理密码">
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="ui-modal" id="account-modal">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <span class="modal-cancel" id="account-close">关闭</span>
+                <span class="modal-title">👤 我的账户</span>
+                <span></span>
+            </div>
+            <div class="account-body" id="account-body">
+                <div class="cloud-loading">加载中...</div>
+            </div>
+        </div>
+    </div>
+    <div class="ui-modal" id="recovery-verify-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span class="modal-cancel" id="recovery-verify-cancel">取消</span>
+                <span class="modal-title">验证密码</span>
+                <span class="modal-done" id="recovery-verify-done">确认</span>
+            </div>
+            <div class="register-body">
+                <div class="register-section">
+                    <div class="register-label">输入管理密码以重新生成恢复码</div>
+                    <input type="password" class="register-input" id="recovery-verify-input" placeholder="管理密码">
+                    <div class="register-warning" style="margin-top:10px;font-size:12px;color:#FF9500;">⚠️ 生成后旧恢复码将失效</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="ui-toast" id="toast"></div>
+    <script src="script.js"></script>
+
+</body>
+</html>
