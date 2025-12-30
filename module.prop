@@ -1,0 +1,7 @@
+id=Yuanxing_Stellar_Core_AppOpt
+name=星驰引擎_星核线程
+version=1.0
+versionCode=10
+author=酷安@穆远星
+description=星驰引擎基础配置文件，如果在安装后看到此描述，说明Customize脚本执行异常。
+updateJson=https://raw.githubusercontent.com/MuYuanXing/Yuanxing_Stellar_Core_AppOpt/main/update.json
