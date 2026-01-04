@@ -7,17 +7,14 @@ function escapeHtml(text) {
 class CloudConfigManager {
     constructor(app) {
         this.app = app;
-        this.leancloud = {
-            appId: 'xHBL8yVjTKlMW8QZdGobxuJY-gzGzoHsz',
-            appKey: 'vJLbyWty7FPbRDcXNzeBAcfZ',
-            serverURL: 'https://xhbl8yvj.lc-cn-n1-shared.com'
+        this.BaoTa = {
+            serverURL: 'https://txt.sakuraki.love'
         };
         this.deviceId = null;
         this.deviceSecret = null;
         this.nickname = null;
         this.configsCache = null;
         this.secretFile = '/data/adb/Yuanxing_Stellar_Core_AppOpt_data/device.json';
-        this._curlPath = null;
     }
 
     async loadDeviceSecret() {
@@ -236,58 +233,27 @@ class CloudConfigManager {
         return this.deviceId;
     }
 
-    async findCurl() {
-        if (this._curlPath) return this._curlPath;
-        const paths = [
-            `${this.app.modDir}/bin/curl`,
-            '/system/bin/curl',
-            '/vendor/bin/curl',
-            '/system/xbin/curl',
-            '/data/adb/magisk/busybox curl',
-            '/data/adb/ksu/bin/busybox curl',
-            '/data/adb/ap/bin/busybox curl'
-        ];
-        for (const p of paths) {
-            try {
-                const test = await this.app.exec(`${p} --version 2>/dev/null | head -n1`);
-                if (test && test.toLowerCase().includes('curl')) {
-                    this._curlPath = p;
-                    return p;
-                }
-            } catch (e) {}
-        }
-        return null;
-    }
-
     async callCloudFunction(functionName, params) {
-        const url = `${this.leancloud.serverURL}/1.1/functions/${functionName}`;
+        const url = `${this.BaoTa.serverURL}/1.1/functions/${functionName}`;
         try {
-            const curlPath = await this.findCurl();
-            if (!curlPath) {
-                return { success: false, message: '系统缺少curl，请安装BusyBox模块' };
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(params)
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                const errorMsg = data.error || data.message || `服务器错误: ${response.status}`;
+                return { success: false, message: errorMsg, code: data.code || response.status };
             }
-            const jsonStr = JSON.stringify(params);
-            const tempFile = '/data/local/tmp/stellar_request.json';
-            await this.app.exec(`printf '%s' '${jsonStr.replace(/'/g, "'\\''")}' > ${tempFile}`);
-            const cmd = `${curlPath} -s --connect-timeout 15 -X POST -H "X-LC-Id: ${this.leancloud.appId}" -H "X-LC-Key: ${this.leancloud.appKey}" -H "Content-Type: application/json" -d @${tempFile} "${url}" 2>&1`;
-            const result = await this.app.exec(cmd);
-            await this.app.exec(`rm -f ${tempFile}`);
-            if (!result || result.trim() === '') {
-                return { success: false, message: '服务器无响应，请检查网络连接' };
-            }
-            if (result.trim().startsWith('<') || result.trim().startsWith('<!')) {
-                return { success: false, message: '服务器返回错误页面，请稍后重试' };
-            }
-            if (result.includes('curl:') || result.includes('Could not resolve')) {
-                return { success: false, message: `网络请求失败: ${result.substring(0, 100)}` };
-            }
-            const parsed = JSON.parse(result);
-            if (parsed.result) return parsed.result;
-            if (parsed.error) return { success: false, message: parsed.error };
-            return parsed;
+            if (data.result) return data.result;
+            if (data.error) return { success: false, message: data.error };
+            return data;
         } catch (e) {
-            if (e.message && e.message.includes('JSON')) {
-                return { success: false, message: '服务器响应格式异常，请联系管理员' };
+            if (e.name === 'TypeError') {
+                return { success: false, message: '网络连接失败，请检查网络' };
             }
             return { success: false, message: `请求异常: ${e.message || '未知错误'}` };
         }
@@ -527,7 +493,7 @@ class CloudConfigManager {
         if (!secret) return { success: false, message: '设备未注册' };
         const timestamp = Date.now();
         const sign = this.generateSign(deviceId, timestamp, secret);
-        const result = await this.callCloudFunction('verifyPasswordForRecovery', { deviceId, timestamp, sign, password });
+        const result = await this.callCloudFunction('regenerateRecoveryCode', { deviceId, timestamp, sign, password });
         return result;
     }
 
@@ -608,6 +574,7 @@ class StellarCoreAppOpt {
         ThemeManager.init();
         this.renderRules();
         renderConfigSourceList(this.rulesMeta.meta);
+        this.loadCloudConfigs(true);
     }
 
     async addCloudLog(action, detail) {
@@ -783,6 +750,7 @@ class StellarCoreAppOpt {
         document.getElementById('check-update-btn')?.addEventListener('click', () => checkCloudUpdates(this));
         document.getElementById('check-update-cancel')?.addEventListener('click', () => {
             document.getElementById('check-update-modal').classList.remove('show');
+            this.pendingUpdates = null;
         });
         document.getElementById('check-update-done')?.addEventListener('click', () => this.applyCloudUpdates());
     }
@@ -925,9 +893,13 @@ class StellarCoreAppOpt {
     async toggleOifaceSmart(enabled) {
         this.settings.oiface_smart = enabled ? 1 : 0;
         if (enabled) {
-            this.showToast('智能 OiFace 已启用');
+            if (this.settings.perf_app_enabled === 1) {
+                this.showToast('智能OiFace已启用 (应用专属配置优先级更高)');
+            } else {
+                this.showToast('智能OiFace已启用');
+            }
         } else {
-            this.showToast('智能 OiFace 已禁用');
+            this.showToast('智能OiFace已禁用');
         }
         this.updateOifaceUI();
         await this.saveSettings();
@@ -942,7 +914,16 @@ class StellarCoreAppOpt {
     async togglePerfApp(enabled) {
         this.settings.perf_app_enabled = enabled ? 1 : 0;
         await this.saveSettings();
-        this.showToast(enabled ? '应用专属配置已启用' : '应用专属配置已禁用');
+        if (enabled) {
+            if (this.settings.oiface_smart === 1) {
+                this.showToast('应用专属配置已启用 (智能OiFace将暂停)');
+            } else {
+                this.showToast('应用专属配置已启用');
+            }
+        } else {
+            this.showToast('应用专属配置已禁用');
+        }
+        this.updateOifaceUI();
     }
 
     async adjustOifaceInterval(delta) {
@@ -962,6 +943,7 @@ class StellarCoreAppOpt {
         const intervalGroup = document.getElementById('oiface-interval-group');
         const isDisabled = this.settings.oiface_disabled === 1;
         const isSmart = this.settings.oiface_smart === 1;
+        const isPerfApp = this.settings.perf_app_enabled === 1;
         if (isDisabled) {
             smartGroup.classList.add('disabled');
             smartToggle.disabled = true;
@@ -969,14 +951,19 @@ class StellarCoreAppOpt {
         } else {
             smartGroup.classList.remove('disabled');
             smartToggle.disabled = false;
-            if (isSmart) {
+            if (isSmart && !isPerfApp) {
                 intervalGroup.classList.remove('hidden');
             } else {
                 intervalGroup.classList.add('hidden');
             }
         }
+        if (isPerfApp && isSmart) {
+            smartGroup.classList.add('paused');
+        } else {
+            smartGroup.classList.remove('paused');
+        }
         if (typeof PerformanceManager !== 'undefined' && PerformanceManager.updateOifaceDisabled) {
-            PerformanceManager.updateOifaceDisabled(isSmart && !isDisabled);
+            PerformanceManager.updateOifaceDisabled(isSmart && !isDisabled && !isPerfApp);
         }
     }
 
@@ -1379,7 +1366,6 @@ class StellarCoreAppOpt {
     async buildConfigContentAsync() {
         const content = this.buildConfigContent();
         if (content && content.trim()) {
-            console.log('[Upload] Using memory content, length:', content.length);
             return content;
         }
         const paths = [
@@ -1389,7 +1375,6 @@ class StellarCoreAppOpt {
         ];
         for (const metaPath of paths) {
             const metaContent = await this.exec(`cat ${metaPath} 2>/dev/null`);
-            console.log('[Upload] Trying meta path:', metaPath, 'length:', metaContent?.length || 0);
             if (metaContent && metaContent.trim()) {
                 try {
                     const parsed = JSON.parse(metaContent);
@@ -1408,11 +1393,9 @@ class StellarCoreAppOpt {
                         }
                     }
                     if (lines.length > 0) {
-                        console.log('[Upload] Built from JSON, lines:', lines.length);
                         return lines.join('\n');
                     }
                 } catch (e) {
-                    console.log('[Upload] JSON parse error:', e.message);
                 }
             }
         }
@@ -1422,19 +1405,16 @@ class StellarCoreAppOpt {
         ];
         for (const confPath of confPaths) {
             const fileContent = await this.exec(`cat ${confPath} 2>/dev/null`);
-            console.log('[Upload] Trying conf path:', confPath, 'length:', fileContent?.length || 0);
             if (fileContent && fileContent.trim()) {
                 const lines = fileContent.split('\n').filter(line => {
                     const trimmed = line.trim();
                     return trimmed && !trimmed.startsWith('# @priority:');
                 });
                 if (lines.length > 0) {
-                    console.log('[Upload] Built from conf, lines:', lines.length);
                     return lines.join('\n');
                 }
             }
         }
-        console.log('[Upload] No content found');
         return '';
     }
 
@@ -2097,7 +2077,6 @@ class StellarCoreAppOpt {
         if (!processors) { this.showToast('请输入适配处理器'); return; }
         if (!tags) { this.showToast('请输入标签'); return; }
         const content = await this.buildConfigContentAsync();
-        console.log('[Upload] Content length:', content?.length || 0, 'Preview:', content?.substring(0, 200));
         if (!content) { this.showToast('当前没有规则可上传'); return; }
         const baseConfigs = this.rulesMeta.getBaseConfigsForUpload();
         document.getElementById('upload-form').classList.add('hidden');
@@ -2356,48 +2335,50 @@ class StellarCoreAppOpt {
     }
 
     async applyCloudUpdates() {
-        const checkedConfigs = document.querySelectorAll('.update-config-checkbox.checked');
-        if (checkedConfigs.length === 0) {
-            this.showToast('没有选择要更新的配置');
+        if (!this.pendingUpdates || this.pendingUpdates.length === 0) {
+            this.showToast('没有可更新的配置');
             document.getElementById('check-update-modal').classList.remove('show');
             return;
         }
+        const hasSelected = this.pendingUpdates.some(u => u.apps.some(a => a.selected));
+        if (!hasSelected) {
+            this.showToast('请至少选择一个应用');
+            return;
+        }
         this.showToast('正在更新配置...');
-        for (const item of checkedConfigs) {
-            const configId = item.dataset.id;
-            const config = this.rulesMeta.meta.cloudConfigs.find(c => c.id === configId);
-            if (!config) continue;
-            const detail = await this.cloud.fetchConfigDetail(configId);
-            if (!detail) continue;
+        for (const update of this.pendingUpdates) {
+            const selectedApps = update.apps.filter(a => a.selected);
+            if (selectedApps.length === 0) continue;
+            const configId = update.config.id;
             for (const [pkg, appData] of Object.entries(this.rulesMeta.meta.apps)) {
-                appData.rules = appData.rules.filter(r => r.source?.configId !== configId);
-                if (appData.rules.length === 0) delete this.rulesMeta.meta.apps[pkg];
-            }
-            const newApps = this.parseConfigApps(detail.content);
-            for (const newApp of newApps) {
-                if (this.rulesMeta.isAppDeleted(newApp.package, configId)) continue;
-                if (!this.rulesMeta.meta.apps[newApp.package]) {
-                    this.rulesMeta.meta.apps[newApp.package] = { appName: newApp.appName || '', priority: null, rules: [] };
+                if (selectedApps.some(a => a.package === pkg)) {
+                    appData.rules = appData.rules.filter(r => r.source?.configId !== configId);
+                    if (appData.rules.length === 0) delete this.rulesMeta.meta.apps[pkg];
                 }
-                for (const rule of newApp.rules) {
-                    this.rulesMeta.meta.apps[newApp.package].rules.push({
+            }
+            for (const appItem of selectedApps) {
+                if (appItem.changeType === 'deleted') {
+                    this.rulesMeta.removeDeletedApp(appItem.package, configId);
+                }
+                if (!this.rulesMeta.meta.apps[appItem.package]) {
+                    this.rulesMeta.meta.apps[appItem.package] = { appName: appItem.appName || '', priority: null, rules: [] };
+                }
+                for (const rule of appItem.rules) {
+                    this.rulesMeta.meta.apps[appItem.package].rules.push({
                         type: rule.type, thread: rule.thread, subprocess: rule.subprocess, cpus: rule.cpus,
                         source: { type: 'cloud', configId: configId }
                     });
                 }
             }
-            this.rulesMeta.updateCloudConfigVersion(configId, detail.version);
-        }
-        const restoreItems = document.querySelectorAll('.deleted-app-checkbox.checked');
-        for (const item of restoreItems) {
-            const pkg = item.closest('.deleted-app-item')?.dataset.pkg;
-            const cfgId = item.closest('.deleted-app-item')?.dataset.config;
-            if (pkg && cfgId) this.rulesMeta.removeDeletedApp(pkg, cfgId);
+            if (selectedApps.length === update.apps.length) {
+                this.rulesMeta.updateCloudConfigVersion(configId, update.latest.version);
+            }
         }
         await this.rulesMeta.save();
         this.renderRules();
         renderConfigSourceList(this.rulesMeta.meta);
         document.getElementById('check-update-modal').classList.remove('show');
+        this.pendingUpdates = null;
         this.showToast('配置已更新');
     }
 
@@ -2481,7 +2462,6 @@ function initDeviceRegistration() {
     chooseNewBtn.addEventListener('click', () => {
         chooseModal.classList.remove('show');
         registerModal.classList.add('show');
-        // 清除恢复模式标记
         registerModal.dataset.isRecovery = '';
         registerModal.dataset.recoveredNickname = '';
         registerModal.dataset.passwordSet = '';
@@ -2544,7 +2524,6 @@ function initDeviceRegistration() {
             return;
         }
         
-        // 恢复模式：只需要设置新密码
         if (isRecovery) {
             recoveryCodeDisplay.textContent = '设置中...';
             try {
@@ -2570,7 +2549,6 @@ function initDeviceRegistration() {
             return;
         }
         
-        // 新注册模式
         recoveryCodeDisplay.textContent = '注册中...';
         const checkResult = await window.stellarApp.cloud.checkNickname(nickname);
         if (!checkResult.available) {
@@ -2607,7 +2585,6 @@ function initDeviceRegistration() {
         if (result.success) {
             recoverModal.classList.remove('show');
             recoverInput.value = '';
-            // 恢复成功，标记为恢复模式，清除密码设置标记
             registerModal.dataset.isRecovery = '1';
             registerModal.dataset.recoveredNickname = result.nickname || '';
             registerModal.dataset.passwordSet = '';
@@ -2654,11 +2631,9 @@ function initThemeToggle() {
     const body = document.body;
     
     if (!themeToggle) {
-        console.warn('Theme toggle button not found');
         return;
     }
     
-    // 从localStorage读取保存的主题设置
     const savedTheme = localStorage.getItem('starchaser-theme');
     
     if (savedTheme === 'dark') {
@@ -2666,49 +2641,39 @@ function initThemeToggle() {
     } else if (savedTheme === 'light') {
         body.classList.remove('dark-mode');
     } else {
-        // 未设置时跟随系统主题
         if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
             body.classList.add('dark-mode');
         }
     }
     
-    // 点击切换主题
     themeToggle.addEventListener('click', () => {
-        // 禁用过渡动画避免backdrop-filter卡顿
         body.classList.add('no-transition');
         
-        // 切换暗色模式
         body.classList.toggle('dark-mode');
         const isDark = body.classList.contains('dark-mode');
         
-        // 保存到localStorage
         localStorage.setItem('starchaser-theme', isDark ? 'dark' : 'light');
         
-        // 延迟恢复过渡动画
         requestAnimationFrame(() => {
             requestAnimationFrame(() => {
                 body.classList.remove('no-transition');
             });
         });
         
-        // 按钮动画效果
         themeToggle.style.transform = 'translateY(-50%) scale(0.85)';
         setTimeout(() => {
             themeToggle.style.transform = 'translateY(-50%) scale(1)';
         }, 150);
         
-        // 可选：显示提示
         if (typeof showToast === 'function') {
             showToast(isDark ? '已切换到暗色模式' : '已切换到亮色模式');
         }
     });
     
-    // 监听系统主题变化（仅在用户未手动设置时响应）
     if (window.matchMedia) {
         const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
         
         const handleSystemThemeChange = (e) => {
-            // 仅在用户未手动设置主题时跟随系统
             const savedTheme = localStorage.getItem('starchaser-theme');
             if (!savedTheme) {
                 if (e.matches) {
@@ -2719,7 +2684,6 @@ function initThemeToggle() {
             }
         };
         
-        // 兼容新旧API
         if (mediaQuery.addEventListener) {
             mediaQuery.addEventListener('change', handleSystemThemeChange);
         } else if (mediaQuery.addListener) {
@@ -2728,18 +2692,10 @@ function initThemeToggle() {
     }
 }
 
-/**
- * 获取当前主题
- * @returns {'light'|'dark'} 当前主题
- */
 function getCurrentTheme() {
     return document.body.classList.contains('dark-mode') ? 'dark' : 'light';
 }
 
-/**
- * 设置主题
- * @param {'light'|'dark'|'auto'} theme 主题设置
- */
 function setTheme(theme) {
     const body = document.body;
     
@@ -2751,7 +2707,7 @@ function setTheme(theme) {
         localStorage.setItem('starchaser-theme', 'light');
     } else if (theme === 'auto') {
         localStorage.removeItem('starchaser-theme');
-        // 跟随系统
+        
         if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
             body.classList.add('dark-mode');
         } else {
@@ -2774,7 +2730,6 @@ class RulesMetaManager {
 
     async load() {
         const content = await this.app.exec(`cat ${this.metaFile} 2>/dev/null`);
-        console.log('[Debug] RulesMetaManager.load - metaFile:', this.metaFile, 'content length:', content?.length);
         if (content && content.trim()) {
             try {
                 const parsed = JSON.parse(content);
@@ -2784,13 +2739,10 @@ class RulesMetaManager {
                     deletedApps: parsed.deletedApps || [],
                     apps: parsed.apps || {}
                 };
-                console.log('[Debug] RulesMetaManager.load - parsed apps count:', Object.keys(this.meta.apps).length);
             } catch (e) {
-                console.log('[Debug] RulesMetaManager.load - JSON parse error, migrating:', e);
                 await this.migrateFromOldFormat();
             }
         } else {
-            console.log('[Debug] RulesMetaManager.load - no meta file, migrating from applist.conf');
             await this.migrateFromOldFormat();
         }
     }
@@ -2799,13 +2751,13 @@ class RulesMetaManager {
         const json = JSON.stringify(this.meta);
         await this.app.exec(`echo '${json.replace(/'/g, "'\\''")}' > ${this.metaFile}`);
         await this.generateApplistConf();
+        await this.app.exec(`/system/bin/mkdir -p ${this.app.persistentDir}/config`);
+        await this.app.exec(`/system/bin/cp -af ${this.metaFile} ${this.app.persistentDir}/config/ 2>/dev/null`);
     }
 
     async migrateFromOldFormat() {
         const oldContent = await this.app.exec(`cat ${this.app.configFile} 2>/dev/null`);
-        console.log('[Debug] migrateFromOldFormat - configFile:', this.app.configFile, 'content length:', oldContent?.length);
         if (!oldContent) {
-            console.log('[Debug] migrateFromOldFormat - no old content, skip');
             return;
         }
 
@@ -2864,7 +2816,6 @@ class RulesMetaManager {
             }
         });
 
-        console.log('[Debug] migrateFromOldFormat - migrated apps count:', Object.keys(this.meta.apps).length);
         await this.save();
     }
 
@@ -3108,6 +3059,8 @@ const IOSchedulerManager = {
     async saveConfig() {
         const content = `scheduler=${this.state.scheduler}\nreadahead=${this.state.readahead}`;
         await this.app.exec(`echo '${content}' > ${this.app.configDir}/io_scheduler.conf`);
+        await this.app.exec(`/system/bin/mkdir -p ${this.app.persistentDir}/config`);
+        await this.app.exec(`/system/bin/cp -af ${this.app.configDir}/io_scheduler.conf ${this.app.persistentDir}/config/ 2>/dev/null`);
     }
 };
 
@@ -3284,6 +3237,8 @@ const PerformanceManager = {
     async save() {
         const json = JSON.stringify(this.config);
         await this.app.exec(`echo '${json.replace(/'/g, "'\\''")}' > ${this.configFile}`);
+        await this.app.exec(`/system/bin/mkdir -p ${this.app.persistentDir}/config`);
+        await this.app.exec(`/system/bin/cp -af ${this.configFile} ${this.app.persistentDir}/config/ 2>/dev/null`);
     },
 
     renderDefaultGovernor() {
@@ -3584,64 +3539,126 @@ async function checkCloudUpdates(app) {
     const body = document.getElementById('check-update-body');
     body.innerHTML = '<div class="cloud-loading">检查中...</div>';
 
-    const updates = [];
-    const deletedToRestore = [];
+    app.pendingUpdates = [];
 
     for (const config of meta.cloudConfigs) {
         const detail = await app.cloud.fetchConfigDetail(config.id);
         if (!detail) continue;
 
         const hasUpdate = detail.version > config.version;
-        updates.push({
-            config,
-            latest: detail,
-            hasUpdate
-        });
-
         if (hasUpdate) {
             const newApps = app.parseConfigApps(detail.content);
-            for (const newApp of newApps) {
-                if (meta.deletedApps.some(d => d.package === newApp.package && d.fromConfigId === config.id)) {
-                    deletedToRestore.push({
-                        package: newApp.package,
-                        appName: newApp.appName,
-                        configId: config.id,
-                        configName: config.name
-                    });
+            const oldApps = {};
+            for (const [pkg, data] of Object.entries(meta.apps)) {
+                const cloudRules = data.rules.filter(r => r.source?.configId === config.id);
+                if (cloudRules.length > 0) {
+                    oldApps[pkg] = { appName: data.appName, rules: cloudRules };
                 }
             }
+            const appChanges = [];
+            for (const newApp of newApps) {
+                const isDeleted = meta.deletedApps.some(d => d.package === newApp.package && d.fromConfigId === config.id);
+                const oldApp = oldApps[newApp.package];
+                let changeType = 'new';
+                if (oldApp) changeType = 'modified';
+                if (isDeleted) changeType = 'deleted';
+                appChanges.push({
+                    package: newApp.package,
+                    appName: newApp.appName || newApp.package,
+                    rules: newApp.rules,
+                    changeType,
+                    selected: changeType !== 'deleted'
+                });
+            }
+            app.pendingUpdates.push({
+                config,
+                latest: detail,
+                apps: appChanges,
+                expanded: false
+            });
         }
     }
 
-    let html = '';
-    for (const item of updates) {
-        const versionText = item.hasUpdate
-            ? `v${item.config.version} → v${item.latest.version}`
-            : `v${item.config.version} (已是最新)`;
-        const versionClass = item.hasUpdate ? '' : 'no-update';
-
-        html += `<div class="update-config-item" data-id="${item.config.id}">
-            <div class="update-config-header">
-                <div class="update-config-name">☁️ ${escapeHtml(item.config.name)}</div>
-                <div class="update-config-version ${versionClass}">${versionText}</div>
-            </div>
-            ${item.hasUpdate ? `<div class="update-config-checkbox checked" data-id="${item.config.id}"></div>` : ''}
-        </div>`;
+    if (app.pendingUpdates.length === 0) {
+        body.innerHTML = '<div style="text-align:center;padding:40px;color:#8E8E93;">所有配置已是最新</div>';
+        return;
     }
 
-    if (deletedToRestore.length > 0) {
-        html += `<div class="deleted-apps-section">
-            <div class="deleted-apps-title">⚠️ 以下应用你曾手动删除，是否恢复？</div>`;
-        for (const app of deletedToRestore) {
-            html += `<div class="deleted-app-item" data-pkg="${app.package}" data-config="${app.configId}">
-                <div class="deleted-app-checkbox"></div>
-                <div class="deleted-app-info">${app.appName || app.package} (来自「${app.configName}」)</div>
+    renderUpdateList(app, body);
+}
+
+function renderUpdateList(app, body) {
+    let html = '';
+    for (let i = 0; i < app.pendingUpdates.length; i++) {
+        const update = app.pendingUpdates[i];
+        const selectedCount = update.apps.filter(a => a.selected).length;
+        html += `<div class="update-config-section" data-index="${i}">
+            <div class="update-config-title">
+                <span>☁️ ${escapeHtml(update.config.name)}</span>
+                <span class="update-config-ver">v${update.config.version} → v${update.latest.version}</span>
+            </div>
+            <div class="select-apps-actions">
+                <span class="select-apps-action" data-action="all" data-index="${i}">全选</span>
+                <span class="select-apps-action" data-action="none" data-index="${i}">全不选</span>
+                <span class="update-selected-count">${selectedCount}/${update.apps.length}</span>
+            </div>
+            <div class="select-apps-list update-apps-list">`;
+        for (const appItem of update.apps) {
+            const typeLabel = appItem.changeType === 'new' ? '新增' : appItem.changeType === 'deleted' ? '已删除' : '更新';
+            const typeClass = appItem.changeType;
+            html += `<div class="select-app-group" data-pkg="${appItem.package}" data-index="${i}">
+                <div class="select-app-header">
+                    <div class="select-app-left">
+                        <div class="select-app-checkbox ${appItem.selected ? 'checked' : ''}" data-pkg="${appItem.package}"></div>
+                        <div class="select-app-info">
+                            <span class="select-app-name">${escapeHtml(appItem.appName)}</span>
+                            <span class="select-app-pkg">${appItem.package}</span>
+                        </div>
+                    </div>
+                    <div class="update-app-meta">
+                        <span class="update-app-tag ${typeClass}">${typeLabel}</span>
+                        <span class="update-app-count">${appItem.rules.length}条规则</span>
+                    </div>
+                </div>
             </div>`;
         }
-        html += '</div>';
+        html += '</div></div>';
     }
+    body.innerHTML = html;
 
-    body.innerHTML = html || '<div style="text-align:center;padding:40px;color:#8E8E93;">所有配置已是最新</div>';
+    body.querySelectorAll('.select-app-header').forEach(header => {
+        header.addEventListener('click', (e) => {
+            const group = header.closest('.select-app-group');
+            const pkg = group.dataset.pkg;
+            const idx = parseInt(group.dataset.index);
+            const update = app.pendingUpdates[idx];
+            const appItem = update?.apps.find(a => a.package === pkg);
+            if (appItem) {
+                appItem.selected = !appItem.selected;
+                header.querySelector('.select-app-checkbox').classList.toggle('checked', appItem.selected);
+                const section = body.querySelector(`.update-config-section[data-index="${idx}"]`);
+                const count = update.apps.filter(a => a.selected).length;
+                section.querySelector('.update-selected-count').textContent = `${count}/${update.apps.length}`;
+            }
+        });
+    });
+
+    body.querySelectorAll('.select-apps-action').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const action = btn.dataset.action;
+            const idx = parseInt(btn.dataset.index);
+            const update = app.pendingUpdates[idx];
+            if (!update) return;
+            update.apps.forEach(a => a.selected = action === 'all');
+            const section = body.querySelector(`.update-config-section[data-index="${idx}"]`);
+            section.querySelectorAll('.select-app-checkbox').forEach(cb => {
+                cb.classList.toggle('checked', action === 'all');
+            });
+            const count = update.apps.filter(a => a.selected).length;
+            section.querySelector('.update-selected-count').textContent = `${count}/${update.apps.length}`;
+        });
+    });
 }
 
 function detectConflicts(existingApps, newApps, newConfigId, cloudConfigs) {

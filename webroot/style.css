@@ -1183,7 +1183,6 @@ input:checked + .slider:before { transform: translateX(20px); }
     overflow-y: auto;
 }
 
-/* 自定义确认弹窗 */
 .confirm-dialog-overlay {
     position: fixed;
     top: 0;
@@ -1373,7 +1372,6 @@ input:checked + .slider:before { transform: translateX(20px); }
     transform: rotate(0deg) scale(1);
 }
 
-/* ========== 暗色模式变量定义 ========== */
 body.dark-mode {
     --bg-gradient: linear-gradient(135deg, #1a1a2e, #16213e, #0f0f23, #1a1a2e);
     --text-primary: #ffffff;
@@ -1384,7 +1382,6 @@ body.dark-mode {
     --card-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
 }
 
-/* ========== 暗色模式基础样式 ========== */
 body.dark-mode {
     background: var(--bg-gradient);
     background-size: 400% 400%;
@@ -1397,7 +1394,6 @@ body.dark-mode .page-title {
     text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
 }
 
-/* ========== 卡片样式 ========== */
 body.dark-mode .glass-card {
     background: var(--glass-bg);
     border: 1px solid var(--glass-border);
@@ -1412,7 +1408,6 @@ body.dark-mode .card-header {
     border-color: rgba(255, 255, 255, 0.1);
 }
 
-/* ========== 信息展示 ========== */
 body.dark-mode .info-label {
     color: var(--text-secondary);
 }
@@ -1425,7 +1420,6 @@ body.dark-mode .device-info {
     border-color: rgba(255, 255, 255, 0.1);
 }
 
-/* ========== 控制区域 ========== */
 body.dark-mode .control-label {
     color: var(--text-primary);
 }
@@ -1438,7 +1432,6 @@ body.dark-mode .control-item-group {
     border-color: rgba(255, 255, 255, 0.08);
 }
 
-/* ========== 规则列表 ========== */
 body.dark-mode .package-name {
     color: var(--text-primary);
 }
@@ -1468,7 +1461,6 @@ body.dark-mode .rule-left {
     color: var(--text-primary);
 }
 
-/* ========== 日志查看器 ========== */
 body.dark-mode .log-viewer {
     background: rgba(0, 0, 0, 0.25);
     color: #b0b0b0;
@@ -1492,7 +1484,6 @@ body.dark-mode .log-filter-tag.active {
     color: #fff;
 }
 
-/* ========== 底部导航栏 ========== */
 body.dark-mode .ui-tabbar {
     background: rgba(20, 20, 35, 0.98);
     border-top: 1px solid rgba(255, 255, 255, 0.1);
@@ -1514,7 +1505,6 @@ body.dark-mode .tab-item.active .tab-label {
     color: #0A84FF;
 }
 
-/* ========== 主题切换按钮（暗色模式） ========== */
 body.dark-mode .theme-toggle {
     background: rgba(50, 50, 70, 0.8);
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
@@ -1531,7 +1521,6 @@ body.dark-mode .theme-icon.moon {
     fill: #ffd93d;
 }
 
-/* ========== 状态徽章 ========== */
 body.dark-mode .status-badge {
     background: rgba(60, 60, 80, 0.5);
 }
@@ -1546,7 +1535,6 @@ body.dark-mode .status-badge.stopped {
     color: #FF3B30;
 }
 
-/* ========== 按钮和操作 ========== */
 body.dark-mode .card-action {
     background: rgba(50, 50, 70, 0.8);
     color: #5AC8FA;
@@ -1561,7 +1549,6 @@ body.dark-mode .card-action.danger {
     color: #FF453A;
 }
 
-/* ========== 输入框和文本框 ========== */
 body.dark-mode .ui-input,
 body.dark-mode .ui-textarea {
     background: rgba(0, 0, 0, 0.25);
@@ -1580,7 +1567,6 @@ body.dark-mode .ui-textarea:focus {
     box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.2);
 }
 
-/* ========== 模态框 ========== */
 body.dark-mode .modal-content {
     background: rgba(30, 30, 45, 0.98);
     border: 1px solid rgba(255, 255, 255, 0.1);
@@ -1622,7 +1608,6 @@ body.dark-mode .modal-backdrop {
     background: rgba(0, 0, 0, 0.7);
 }
 
-/* ========== 关于页面 ========== */
 body.dark-mode .about-item {
     background: rgba(30, 30, 50, 0.6);
     border: 1px solid rgba(255, 255, 255, 0.08);
@@ -1641,7 +1626,6 @@ body.dark-mode .about-icon {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
-/* ========== 云端配置 ========== */
 body.dark-mode .cloud-item {
     background: rgba(50, 50, 70, 0.6);
     border: 1px solid rgba(255, 255, 255, 0.08);
@@ -1683,7 +1667,6 @@ body.dark-mode .cloud-search-input {
     color: #fff;
 }
 
-/* ========== 开关控件 ========== */
 body.dark-mode .switch .slider {
     background: rgba(60, 60, 80, 0.8);
 }
@@ -1692,7 +1675,6 @@ body.dark-mode .switch input:checked + .slider {
     background: #34C759;
 }
 
-/* ========== 间隔选择器 ========== */
 body.dark-mode .interval-btn {
     background: rgba(50, 50, 70, 0.8);
     color: #5AC8FA;
@@ -1707,14 +1689,12 @@ body.dark-mode .interval-value {
     color: var(--text-primary);
 }
 
-/* ========== Toast提示 ========== */
 body.dark-mode .ui-toast {
     background: rgba(50, 50, 70, 0.95);
     color: #fff;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
 }
 
-/* ========== 自定义确认弹窗 ========== */
 body.dark-mode .confirm-dialog {
     background: rgba(44, 44, 46, 0.98);
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
@@ -1740,7 +1720,6 @@ body.dark-mode .confirm-dialog-btn:active {
     background: rgba(255, 255, 255, 0.06);
 }
 
-/* ========== 我的配置 ========== */
 body.dark-mode .my-config-item {
     background: rgba(50, 50, 70, 0.6);
 }
@@ -1762,7 +1741,6 @@ body.dark-mode .my-config-desc {
     color: var(--text-muted);
 }
 
-/* ========== 配置更新 ========== */
 body.dark-mode .config-update-section {
     border-color: rgba(255, 255, 255, 0.08);
 }
@@ -1779,7 +1757,6 @@ body.dark-mode .config-update-notice {
     background: rgba(0, 122, 255, 0.15);
 }
 
-/* ========== 选择器 ========== */
 body.dark-mode .ui-select-custom {
     background: rgba(0, 0, 0, 0.2);
     border-color: rgba(255, 255, 255, 0.1);
@@ -1807,7 +1784,6 @@ body.dark-mode .ui-select-option.active {
     background: rgba(0, 122, 255, 0.2);
 }
 
-/* ========== 下载模式选项 ========== */
 body.dark-mode .mode-option {
     background: rgba(50, 50, 70, 0.5);
     border-color: rgba(255, 255, 255, 0.1);
@@ -1825,7 +1801,6 @@ body.dark-mode .mode-desc {
     color: var(--text-secondary);
 }
 
-/* ========== 应用选择列表 ========== */
 body.dark-mode .select-apps-list {
     background: rgba(0, 0, 0, 0.15);
 }
@@ -1848,7 +1823,6 @@ body.dark-mode .app-select-pkg {
     color: var(--text-muted);
 }
 
-/* ========== 上传进度 ========== */
 body.dark-mode .upload-spinner {
     border-color: rgba(255, 255, 255, 0.1);
     border-top-color: #007AFF;
@@ -1862,12 +1836,10 @@ body.dark-mode .upload-notice {
     color: var(--text-muted);
 }
 
-/* ========== 二维码弹窗 ========== */
 body.dark-mode .modal-panel {
     background: rgba(35, 35, 50, 0.98);
 }
 
-/* ========== 过渡动画 ========== */
 body,
 .glass-card,
 .page-title,
@@ -3232,7 +3204,6 @@ body.dark-mode .import-conflict-name {
     color: #f2f2f7;
 }
 
-/* ==================== 性能页面展开式配置 ==================== */
 .perf-expand-item {
     border-bottom: 1px solid rgba(0, 0, 0, 0.06);
     padding-bottom: 12px;
@@ -3292,7 +3263,6 @@ body.dark-mode .import-conflict-name {
     font-size: 10px;
 }
 
-/* ==================== 弹窗性能配置容器 ==================== */
 .perf-config-container {
     background: rgba(0, 0, 0, 0.03);
     border-radius: 12px;
@@ -3315,7 +3285,6 @@ body.dark-mode .import-conflict-name {
     margin-bottom: 6px;
 }
 
-/* ==================== 暗色模式适配 ==================== */
 body.dark-mode .perf-expand-label {
     color: #f5f5f7;
 }
@@ -3367,7 +3336,35 @@ body.dark-mode .account-auth-section { background: rgba(10,132,255,0.15); }
 .log-content-wrapper.collapsed { max-height: 0; opacity: 0; }
 .control-item-group.disabled { opacity: 0.5; pointer-events: none; }
 .control-item-group.disabled .switch { opacity: 0.6; }
+.control-item-group.paused { opacity: 0.6; }
+.control-item-group.paused::after { content: ' (已暂停)'; font-size: 12px; color: #f0ad4e; }
 .perf-option-row.disabled { opacity: 0.5; pointer-events: none; }
 .perf-option-row.disabled .switch { opacity: 0.6; }
 body.dark-mode .log-collapse-icon { color: #8E8E93; }
 body.dark-mode .log-expand-hint { color: #8E8E93; }
+
+
+.update-config-section { margin-bottom: 16px; }
+.update-config-title { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: rgba(0,122,255,0.1); border-radius: 12px 12px 0 0; }
+.update-config-title span:first-child { font-size: 15px; font-weight: 600; color: #1c1c1e; }
+.update-config-ver { font-size: 13px; color: #34C759; font-weight: 500; }
+.update-apps-list { max-height: 300px; overflow-y: auto; }
+.update-selected-count { margin-left: auto; font-size: 13px; color: #007AFF; font-weight: 500; }
+.update-app-meta { display: flex; align-items: center; gap: 8px; }
+.update-app-tag { font-size: 11px; padding: 2px 6px; border-radius: 4px; }
+.update-app-tag.new { background: rgba(52,199,89,0.15); color: #34C759; }
+.update-app-tag.modified { background: rgba(0,122,255,0.15); color: #007AFF; }
+.update-app-tag.deleted { background: rgba(255,149,0,0.15); color: #FF9500; }
+.update-app-count { font-size: 12px; color: #8E8E93; }
+
+body.dark-mode .update-config-title { background: rgba(10,132,255,0.15); }
+body.dark-mode .update-config-title span:first-child { color: #fff; }
+body.dark-mode .update-config-ver { color: #30D158; }
+body.dark-mode .update-selected-count { color: #0A84FF; }
+body.dark-mode .update-app-tag.new { background: rgba(48,209,88,0.2); color: #30D158; }
+body.dark-mode .update-app-tag.modified { background: rgba(10,132,255,0.2); color: #0A84FF; }
+body.dark-mode .update-app-tag.deleted { background: rgba(255,159,10,0.2); color: #FF9F0A; }
+body.dark-mode .select-app-group { background: rgba(50,50,70,0.5); }
+body.dark-mode .select-app-name { color: #fff; }
+body.dark-mode .select-app-checkbox { border-color: #48484A; }
+body.dark-mode .select-app-checkbox.checked { border-color: #0A84FF; background: #0A84FF; }
