@@ -1,6 +1,6 @@
 {
-  "version": "1.0",
-  "versionCode": 10,
-  "zipUrl": "https://github.com/MuYuanXing/Yuanxing_Stellar_Core_AppOpt/releases/download/v1.0/Yuanxing_Stellar_Core_AppOpt-v1.0.zip",
+  "version": "1.2",
+  "versionCode": 12,
+  "zipUrl": "https://github.com/MuYuanXing/Yuanxing_Stellar_Core_AppOpt/releases/download/v1.2/Yuanxing_Stellar_Core_AppOpt-v1.2.zip",
   "changelog": "https://raw.githubusercontent.com/MuYuanXing/Yuanxing_Stellar_Core_AppOpt/main/changelog.md"
 }
