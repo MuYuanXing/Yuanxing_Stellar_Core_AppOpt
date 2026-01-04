@@ -40,7 +40,7 @@ fi
 
 sleep 1
 
-DESCRIPTION="为${MARKET_NAME}(${DEVICE_MODEL})提供线程CPU亲和性置放。处理器: ${SOC_MODEL}，CPU拓扑: ${CPU_SUMMARY}。"
+DESCRIPTION="为${MARKET_NAME}(${DEVICE_MODEL})提供云端配置的线程优化服务。星核线程内置众多欧加真设备优化功能(支持小米等)，例oiface的多情况下配置，I/O调度器、预读取值大小及CPU调速器的切换。"
 DESCRIPTION_ESCAPED=$(echo "$DESCRIPTION" | sed 's/[\/&]/\\&/g')
 
 if grep -q "^description=" "$MODPATH/module.prop"; then

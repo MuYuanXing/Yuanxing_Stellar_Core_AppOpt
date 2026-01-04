@@ -1,6 +1,23 @@
 #!/system/bin/sh
 SKIPUNZIP=1
 
+MODID="Yuanxing_Stellar_Core_AppOpt"
+OLD_MODDIR="/data/adb/modules/$MODID"
+PERSISTENT_DIR="/data/adb/${MODID}_data"
+
+mkdir -p "$PERSISTENT_DIR"
+mkdir -p "$PERSISTENT_DIR/config"
+
+if [ -d "$OLD_MODDIR/config" ]; then
+    cp -af "$OLD_MODDIR/config/"* "$PERSISTENT_DIR/config/" 2>/dev/null
+fi
+if [ -f "$OLD_MODDIR/applist.conf" ] && [ ! -f "$PERSISTENT_DIR/applist.conf" ]; then
+    cp -af "$OLD_MODDIR/applist.conf" "$PERSISTENT_DIR/applist.conf" 2>/dev/null
+fi
+if [ -f "$OLD_MODDIR/settings.conf" ] && [ ! -f "$PERSISTENT_DIR/settings.conf" ]; then
+    cp -af "$OLD_MODDIR/settings.conf" "$PERSISTENT_DIR/settings.conf" 2>/dev/null
+fi
+
 ui_print "- 解压模块文件..."
 unzip -o "$ZIPFILE" -d $MODPATH >&2
 
@@ -29,28 +46,30 @@ ui_print " $MODULE_NAME $MODULE_VERSION"
 ui_print " 作者: 酷安@穆远星"
 ui_print "***********************************************"
 
-MODID="Yuanxing_Stellar_Core_AppOpt"
-OLD_MODDIR="/data/adb/modules/$MODID"
-PERSISTENT_DIR="/data/adb/${MODID}_data"
-
-mkdir -p "$PERSISTENT_DIR"
 set_perm "$PERSISTENT_DIR" 0 0 0755
+
+mkdir -p "$MODPATH/config"
+
+if [ -n "$(ls -A "$PERSISTENT_DIR/config" 2>/dev/null)" ]; then
+    cp -af "$PERSISTENT_DIR/config/"* "$MODPATH/config/" 2>/dev/null
+fi
 
 if [ -f "$PERSISTENT_DIR/applist.conf" ]; then
     cp -af "$PERSISTENT_DIR/applist.conf" "$MODPATH/applist.conf"
-elif [ -f "$OLD_MODDIR/applist.conf" ]; then
-    cp -af "$OLD_MODDIR/applist.conf" "$MODPATH/applist.conf"
-    cp -af "$OLD_MODDIR/applist.conf" "$PERSISTENT_DIR/applist.conf"
 fi
 
 if [ -f "$PERSISTENT_DIR/settings.conf" ]; then
     cp -af "$PERSISTENT_DIR/settings.conf" "$MODPATH/settings.conf"
-elif [ -f "$OLD_MODDIR/settings.conf" ]; then
-    cp -af "$OLD_MODDIR/settings.conf" "$MODPATH/settings.conf"
-    cp -af "$OLD_MODDIR/settings.conf" "$PERSISTENT_DIR/settings.conf"
 else
-    echo "interval=2" > "$MODPATH/settings.conf"
-    echo "enabled=1" >> "$MODPATH/settings.conf"
+    cat > "$MODPATH/settings.conf" << 'EOF'
+interval=2
+enabled=1
+oiface_disabled=0
+oiface_smart=0
+oiface_interval=3
+perf_default_enabled=0
+perf_app_enabled=0
+EOF
 fi
 
 set_perm "$MODPATH/applist.conf" 0 0 0644
@@ -79,7 +98,7 @@ ui_print "- 正在检测设备架构..."
 
 if [ "$ARCH" = "arm64" ]; then
     cp "$MODPATH/bin/arm64-v8a/AppOpt" "$MODPATH/AppOpt"
-    rm -rf "$MODPATH/bin"
+    rm -rf "$MODPATH/bin/arm64-v8a"
     ui_print "✓ 设备平台: $ARCH"
 else
     ui_print " "

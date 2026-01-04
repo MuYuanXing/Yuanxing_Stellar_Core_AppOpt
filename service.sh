@@ -1,19 +1,20 @@
 #!/system/bin/sh
 MODDIR="${0%/*}"
-SETTINGS_FILE="${MODDIR}/settings.conf"
-CONFIG_FILE="${MODDIR}/applist.conf"
-CONFIG_DIR="${MODDIR}/config"
-LOG_FILE="${MODDIR}/service.log"
-PERF_CONFIG_FILE="${CONFIG_DIR}/app_performance.json"
-RUNTIME_DIR="${MODDIR}/runtime"
-LOCK_DIR="${RUNTIME_DIR}/oiface.lock"
-OIFACE_STATE_FILE="${RUNTIME_DIR}/oiface_state"
+SETTINGS="${MODDIR}/settings.conf"
+APPLIST="${MODDIR}/applist.conf"
+CFGDIR="${MODDIR}/config"
+LOG="${MODDIR}/service.log"
+PERFCFG="${CFGDIR}/app_performance.json"
+RUNDIR="${MODDIR}/runtime"
+LOCKDIR="${RUNDIR}/oiface.lock"
+OIFACE_STATE="${RUNDIR}/oiface_state"
+ORIG_STATE="${RUNDIR}/original_state.conf"
 
-log_msg() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "${LOG_FILE}"
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "${LOG}"
 }
 
-wait_sys_boot_completed() {
+wait_boot() {
     local i=9
     until [[ "$(getprop sys.boot_completed)" == "1" ]] || [[ "${i}" -le 0 ]]; do
         i=$((i - 1))
@@ -22,214 +23,244 @@ wait_sys_boot_completed() {
 }
 
 init_runtime() {
-    mkdir -p "${RUNTIME_DIR}"
-    rmdir "${LOCK_DIR}" 2>/dev/null
-    echo "on" > "${OIFACE_STATE_FILE}"
+    mkdir -p "${RUNDIR}"
+    rmdir "${LOCKDIR}" 2>/dev/null
+    echo "on" > "${OIFACE_STATE}"
 }
 
-update_device_info() {
-    local cpu_info_file="${MODDIR}/cpu_info.conf"
-    [[ ! -f "${cpu_info_file}" ]] && return
-    local new_kernel=$(uname -r)
-    sed -i "s/^kernel_ver=.*/kernel_ver=${new_kernel}/" "${cpu_info_file}"
+save_orig_state() {
+    [[ -f "${ORIG_STATE}" ]] && return
+    {
+        for f in /sys/block/*/queue/scheduler; do
+            [[ -f "$f" ]] || continue
+            local cur=$(cat "$f" | grep -o '\[[^]]*\]' | tr -d '[]')
+            [[ -n "$cur" ]] && echo "sched:${f}:${cur}"
+        done
+        for f in /sys/block/*/queue/read_ahead_kb; do
+            [[ -f "$f" ]] && echo "readahead:${f}:$(cat $f)"
+        done
+        for f in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
+            [[ -f "$f" ]] && echo "gov:${f}:$(cat $f)"
+        done
+        for f in /sys/devices/system/cpu/cpu*/core_ctl/min_cpus; do
+            [[ -f "$f" ]] && echo "mincpu:${f}:$(cat $f)"
+        done
+    } > "${ORIG_STATE}"
+    log "系统原始状态已保存"
 }
 
-acquire_lock() {
-    local max_wait=50
+restore_orig_state() {
+    [[ ! -f "${ORIG_STATE}" ]] && return
+    while IFS=: read -r type path val; do
+        [[ -z "$type" ]] && continue
+        case "$type" in
+            sched|gov)
+                echo "$val" > "$path" 2>/dev/null
+                ;;
+            readahead)
+                echo "$val" > "$path" 2>/dev/null
+                ;;
+            mincpu)
+                chmod a+w "$path" 2>/dev/null
+                echo "$val" > "$path" 2>/dev/null
+                chmod a-w "$path" 2>/dev/null
+                ;;
+        esac
+    done < "${ORIG_STATE}"
+    log "已恢复系统原始状态"
+}
+
+restore_to_orig() {
+    [[ ! -f "${ORIG_STATE}" ]] && return
+    while IFS=: read -r type path val; do
+        [[ -z "$type" ]] && continue
+        case "$type" in
+            sched|gov|readahead)
+                echo "$val" > "$path" 2>/dev/null
+                ;;
+        esac
+    done < "${ORIG_STATE}"
+}
+
+restore_perf() {
+    read_settings
+    if [[ "${PERF_DEF}" == "1" ]]; then
+        local s=$(get_def_perf "sched")
+        local r=$(get_def_perf "readahead")
+        local g=$(get_def_perf "gov")
+        [[ -n "$s" ]] && apply_sched "$s"
+        [[ -n "$r" ]] && [[ "$r" -gt 0 ]] 2>/dev/null && apply_readahead "$r"
+        [[ -n "$g" ]] && apply_gov "$g"
+    else
+        restore_to_orig
+    fi
+}
+
+update_devinfo() {
+    local cpuinfo="${MODDIR}/cpu_info.conf"
+    [[ ! -f "${cpuinfo}" ]] && return
+    sed -i "s/^kernel_ver=.*/kernel_ver=$(uname -r)/" "${cpuinfo}"
+}
+
+lock() {
     local i=0
-    while ! mkdir "${LOCK_DIR}" 2>/dev/null; do
+    while ! mkdir "${LOCKDIR}" 2>/dev/null; do
         i=$((i + 1))
-        if [[ "${i}" -ge "${max_wait}" ]]; then
-            rmdir "${LOCK_DIR}" 2>/dev/null
-            mkdir "${LOCK_DIR}" 2>/dev/null
+        if [[ "${i}" -ge 50 ]]; then
+            rmdir "${LOCKDIR}" 2>/dev/null
+            mkdir "${LOCKDIR}" 2>/dev/null
             break
         fi
         sleep 0.1 2>/dev/null || sleep 1
     done
 }
 
-release_lock() {
-    rmdir "${LOCK_DIR}" 2>/dev/null
+unlock() {
+    rmdir "${LOCKDIR}" 2>/dev/null
 }
 
-get_oiface_state() {
-    cat "${OIFACE_STATE_FILE}" 2>/dev/null || echo "on"
+get_oiface() {
+    cat "${OIFACE_STATE}" 2>/dev/null || echo "on"
 }
 
-set_oiface_state() {
-    local new_state="$1"
-    local reason="$2"
-    acquire_lock
-    local current=$(cat "${OIFACE_STATE_FILE}" 2>/dev/null || echo "on")
-    if [[ "${current}" != "${new_state}" ]]; then
-        if [[ "${new_state}" == "off" ]]; then
-            stop oiface 2>/dev/null
-        else
-            start oiface 2>/dev/null
-        fi
-        echo "${new_state}" > "${OIFACE_STATE_FILE}"
-        log_msg "[OiFace] ${current} → ${new_state} (${reason})"
+set_oiface() {
+    local state="$1" reason="$2"
+    lock
+    local cur=$(cat "${OIFACE_STATE}" 2>/dev/null || echo "on")
+    if [[ "${cur}" != "${state}" ]]; then
+        [[ "${state}" == "off" ]] && stop oiface 2>/dev/null || start oiface 2>/dev/null
+        echo "${state}" > "${OIFACE_STATE}"
+        log "[OiFace] ${cur} → ${state} (${reason})"
     fi
-    release_lock
+    unlock
 }
 
 read_settings() {
     ENABLED=1
-    OIFACE_DISABLED=0
+    OIFACE_OFF=0
     OIFACE_SMART=0
-    OIFACE_INTERVAL=3
-    PERF_DEFAULT_ENABLED=0
-    PERF_APP_ENABLED=0
-    if [[ -f "${SETTINGS_FILE}" ]]; then
-        ENABLED=$(grep "^enabled=" "${SETTINGS_FILE}" | cut -d= -f2)
-        OIFACE_DISABLED=$(grep "^oiface_disabled=" "${SETTINGS_FILE}" | cut -d= -f2)
-        OIFACE_SMART=$(grep "^oiface_smart=" "${SETTINGS_FILE}" | cut -d= -f2)
-        OIFACE_INTERVAL=$(grep "^oiface_interval=" "${SETTINGS_FILE}" | cut -d= -f2)
-        PERF_DEFAULT_ENABLED=$(grep "^perf_default_enabled=" "${SETTINGS_FILE}" | cut -d= -f2)
-        PERF_APP_ENABLED=$(grep "^perf_app_enabled=" "${SETTINGS_FILE}" | cut -d= -f2)
+    OIFACE_INT=3
+    PERF_DEF=0
+    PERF_APP=0
+    if [[ -f "${SETTINGS}" ]]; then
+        ENABLED=$(grep "^enabled=" "${SETTINGS}" | cut -d= -f2)
+        OIFACE_OFF=$(grep "^oiface_disabled=" "${SETTINGS}" | cut -d= -f2)
+        OIFACE_SMART=$(grep "^oiface_smart=" "${SETTINGS}" | cut -d= -f2)
+        OIFACE_INT=$(grep "^oiface_interval=" "${SETTINGS}" | cut -d= -f2)
+        PERF_DEF=$(grep "^perf_default_enabled=" "${SETTINGS}" | cut -d= -f2)
+        PERF_APP=$(grep "^perf_app_enabled=" "${SETTINGS}" | cut -d= -f2)
     fi
     [[ -z "${ENABLED}" ]] && ENABLED=1
-    [[ -z "${OIFACE_DISABLED}" ]] && OIFACE_DISABLED=0
+    [[ -z "${OIFACE_OFF}" ]] && OIFACE_OFF=0
     [[ -z "${OIFACE_SMART}" ]] && OIFACE_SMART=0
-    [[ -z "${OIFACE_INTERVAL}" ]] && OIFACE_INTERVAL=3
-    [[ -z "${PERF_DEFAULT_ENABLED}" ]] && PERF_DEFAULT_ENABLED=0
-    [[ -z "${PERF_APP_ENABLED}" ]] && PERF_APP_ENABLED=0
+    [[ -z "${OIFACE_INT}" ]] && OIFACE_INT=3
+    [[ -z "${PERF_DEF}" ]] && PERF_DEF=0
+    [[ -z "${PERF_APP}" ]] && PERF_APP=0
 }
 
-get_json_string() {
-    local file="$1"
-    local key="$2"
-    grep -o "\"${key}\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" "$file" 2>/dev/null | \
-        sed 's/.*:[[:space:]]*"\([^"]*\)".*/\1/' | head -n 1
-}
-
-get_json_number() {
-    local file="$1"
-    local key="$2"
+get_json_num() {
+    local file="$1" key="$2"
     grep -o "\"${key}\"[[:space:]]*:[[:space:]]*[0-9]*" "$file" 2>/dev/null | \
         grep -o '[0-9]*$' | head -n 1
 }
 
-get_json_bool() {
-    local file="$1"
-    local key="$2"
-    local result=$(grep -o "\"${key}\"[[:space:]]*:[[:space:]]*\(true\|false\)" "$file" 2>/dev/null | \
-        grep -o '\(true\|false\)$' | head -n 1)
-    [[ "${result}" == "true" ]] && echo "1" || echo "0"
+get_rule_pkgs() {
+    [[ -f "${APPLIST}" ]] && grep -v "^#" "${APPLIST}" | grep -v "^$" | sed 's/[{:=].*//g' | sort -u
 }
 
-get_rule_packages() {
-    if [[ -f "${CONFIG_FILE}" ]]; then
-        grep -v "^#" "${CONFIG_FILE}" | grep -v "^$" | sed 's/[{:=].*//g' | sort -u
-    fi
-}
-
-get_foreground_package() {
+get_fg_pkg() {
     dumpsys activity activities 2>/dev/null | grep topResumedActivity= | tail -n 1 | cut -d '{' -f2 | cut -d '/' -f1 | cut -d ' ' -f3
 }
 
-is_package_in_rules() {
+in_rules() {
     local pkg="$1"
-    local packages
-    packages=$(get_rule_packages)
-    echo "${packages}" | grep -q "^${pkg}$"
+    get_rule_pkgs | grep -q "^${pkg}$"
 }
 
-apply_io_config() {
-    local io_config="${CONFIG_DIR}/io_scheduler.conf"
-    if [[ -f "${io_config}" ]]; then
-        local scheduler
-        local readahead
-        scheduler=$(grep "^scheduler=" "${io_config}" | cut -d'=' -f2)
-        readahead=$(grep "^readahead=" "${io_config}" | cut -d'=' -f2)
-        if [[ -n "${scheduler}" ]]; then
-            for f in /sys/block/*/queue/scheduler; do
-                echo "${scheduler}" > "${f}" 2>/dev/null
-            done
-            log_msg "IO调度器已设置: ${scheduler}"
-        fi
-        if [[ -n "${readahead}" ]]; then
-            for f in /sys/block/*/queue/read_ahead_kb; do
-                echo "${readahead}" > "${f}" 2>/dev/null
-            done
-            log_msg "预读取已设置: ${readahead}KB"
-        fi
-    fi
-}
-
-apply_priority_to_process() {
-    local process_name="$1"
-    local nice_val="$2"
-    local io_class="$3"
-    local io_level="$4"
-    local pids
-    pids=$(pgrep -f "${process_name}" 2>/dev/null)
-    if [[ -n "${pids}" ]]; then
-        for pid in ${pids}; do
-            renice -n "${nice_val}" -p "${pid}" 2>/dev/null
-            ionice -c "${io_class}" -n "${io_level}" -p "${pid}" 2>/dev/null
-        done
-    fi
-}
-
-apply_process_priority() {
-    if [[ ! -f "${CONFIG_FILE}" ]]; then
-        return
-    fi
-    local current_pkg=""
-    local current_nice=""
-    local current_io_class=""
-    local current_io_level=""
-    while IFS= read -r line; do
-        if echo "${line}" | grep -q "^# @priority:"; then
-            local priority_str
-            local io_part
-            priority_str=$(echo "${line}" | sed 's/^# @priority://')
-            current_nice=$(echo "${priority_str}" | grep -o 'nice=[^,]*' | cut -d'=' -f2)
-            io_part=$(echo "${priority_str}" | grep -o 'io=[^,]*' | cut -d'=' -f2)
-            current_io_class=$(echo "${io_part}" | cut -d'-' -f1)
-            current_io_level=$(echo "${io_part}" | cut -d'-' -f2)
-            continue
-        fi
-        if echo "${line}" | grep -q "^#\|^$"; then
-            continue
-        fi
-        local pkg
-        pkg=$(echo "${line}" | cut -d'=' -f1 | cut -d'{' -f1 | cut -d':' -f1)
-        if [[ -n "${current_pkg}" ]] && [[ "${pkg}" != "${current_pkg}" ]]; then
-            if [[ -n "${current_nice}" ]]; then
-                apply_priority_to_process "${current_pkg}" "${current_nice}" "${current_io_class}" "${current_io_level}"
-            fi
-            current_nice=""
-            current_io_class=""
-            current_io_level=""
-        fi
-        current_pkg="${pkg}"
-    done < "${CONFIG_FILE}"
-    if [[ -n "${current_pkg}" ]] && [[ -n "${current_nice}" ]]; then
-        apply_priority_to_process "${current_pkg}" "${current_nice}" "${current_io_class}" "${current_io_level}"
-    fi
-}
-
-priority_daemon() {
-    while true; do
-        sleep 300
-        apply_process_priority
+apply_sched() {
+    local val="$1"
+    [[ -z "$val" ]] && return
+    for f in /sys/block/*/queue/scheduler; do
+        echo "$val" > "$f" 2>/dev/null
     done
 }
 
-get_perf_interval() {
-    if [[ -f "${PERF_CONFIG_FILE}" ]]; then
-        local interval
-        interval=$(get_json_number "${PERF_CONFIG_FILE}" "interval")
-        [[ -n "${interval}" ]] && [[ "${interval}" -gt 0 ]] 2>/dev/null && echo "${interval}" && return
+apply_readahead() {
+    local val="$1"
+    [[ -z "$val" ]] && return
+    [[ "$val" -gt 0 ]] 2>/dev/null || return
+    for f in /sys/block/*/queue/read_ahead_kb; do
+        echo "$val" > "$f" 2>/dev/null
+    done
+}
+
+apply_gov() {
+    local val="$1"
+    [[ -z "$val" ]] && return
+    for f in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
+        echo "$val" > "$f" 2>/dev/null
+    done
+}
+
+apply_io_cfg() {
+    local iocfg="${CFGDIR}/io_scheduler.conf"
+    [[ ! -f "${iocfg}" ]] && return
+    local sched=$(grep "^scheduler=" "${iocfg}" | cut -d'=' -f2)
+    local ra=$(grep "^readahead=" "${iocfg}" | cut -d'=' -f2)
+    [[ -n "${sched}" ]] && apply_sched "${sched}" && log "IO调度器: ${sched}"
+    [[ -n "${ra}" ]] && apply_readahead "${ra}" && log "预读取: ${ra}KB"
+}
+
+apply_prio() {
+    local proc="$1" nice="$2" ioc="$3" iol="$4"
+    local pids=$(pgrep -f "${proc}" 2>/dev/null)
+    [[ -z "${pids}" ]] && return
+    for pid in ${pids}; do
+        renice -n "${nice}" -p "${pid}" 2>/dev/null
+        ionice -c "${ioc}" -n "${iol}" -p "${pid}" 2>/dev/null
+    done
+}
+
+apply_proc_prio() {
+    [[ ! -f "${APPLIST}" ]] && return
+    local pkg="" nice="" ioc="" iol=""
+    while IFS= read -r line; do
+        if echo "${line}" | grep -q "^# @priority:"; then
+            local pstr=$(echo "${line}" | sed 's/^# @priority://')
+            nice=$(echo "${pstr}" | grep -o 'nice=[^,]*' | cut -d'=' -f2)
+            local io=$(echo "${pstr}" | grep -o 'io=[^,]*' | cut -d'=' -f2)
+            ioc=$(echo "${io}" | cut -d'-' -f1)
+            iol=$(echo "${io}" | cut -d'-' -f2)
+            continue
+        fi
+        echo "${line}" | grep -q "^#\|^$" && continue
+        local p=$(echo "${line}" | cut -d'=' -f1 | cut -d'{' -f1 | cut -d':' -f1)
+        if [[ -n "${pkg}" ]] && [[ "${p}" != "${pkg}" ]]; then
+            [[ -n "${nice}" ]] && apply_prio "${pkg}" "${nice}" "${ioc}" "${iol}"
+            nice="" ioc="" iol=""
+        fi
+        pkg="${p}"
+    done < "${APPLIST}"
+    [[ -n "${pkg}" ]] && [[ -n "${nice}" ]] && apply_prio "${pkg}" "${nice}" "${ioc}" "${iol}"
+}
+
+prio_daemon() {
+    while true; do
+        sleep 300
+        apply_proc_prio
+    done
+}
+
+get_perf_int() {
+    if [[ -f "${PERFCFG}" ]]; then
+        local v=$(get_json_num "${PERFCFG}" "interval")
+        [[ -n "$v" ]] && [[ "$v" -gt 0 ]] 2>/dev/null && echo "$v" && return
     fi
     echo "1"
 }
 
-extract_app_block() {
-    local file="$1"
-    local pkg="$2"
+extract_block() {
+    local file="$1" pkg="$2"
     awk -v pkg="\"${pkg}\"" '
     BEGIN { found=0; depth=0; block="" }
     {
@@ -261,276 +292,225 @@ extract_app_block() {
     }' "$file" 2>/dev/null
 }
 
-get_app_perf_config() {
+get_app_perf() {
+    local pkg="$1" key="$2"
+    [[ ! -f "${PERFCFG}" ]] && return
+    local block=$(extract_block "${PERFCFG}" "${pkg}")
+    [[ -z "${block}" ]] && return
+    case "${key}" in
+        disable_oiface)
+            echo "${block}" | grep -q '"disableOiface"[[:space:]]*:[[:space:]]*true' && echo "1" || echo "0"
+            ;;
+        sched)
+            echo "${block}" | grep -o '"scheduler"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*:[ ]*"\([^"]*\)".*/\1/'
+            ;;
+        readahead)
+            echo "${block}" | grep -o '"readahead"[[:space:]]*:[[:space:]]*[0-9]*' | grep -o '[0-9]*$'
+            ;;
+        gov)
+            echo "${block}" | grep -o '"governor"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*:[ ]*"\([^"]*\)".*/\1/'
+            ;;
+    esac
+}
+
+has_app_perf() {
     local pkg="$1"
-    local key="$2"
-    if [[ -f "${PERF_CONFIG_FILE}" ]]; then
-        local block
-        block=$(extract_app_block "${PERF_CONFIG_FILE}" "${pkg}")
-        if [[ -n "${block}" ]]; then
-            case "${key}" in
-                disableOiface)
-                    echo "${block}" | grep -q '"disableOiface"[[:space:]]*:[[:space:]]*true' && echo "1" || echo "0"
-                    ;;
-                scheduler)
-                    echo "${block}" | grep -o '"scheduler"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*:[ ]*"\([^"]*\)".*/\1/'
-                    ;;
-                readahead)
-                    echo "${block}" | grep -o '"readahead"[[:space:]]*:[[:space:]]*[0-9]*' | grep -o '[0-9]*$'
-                    ;;
-                governor)
-                    echo "${block}" | grep -o '"governor"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*:[ ]*"\([^"]*\)".*/\1/'
-                    ;;
-            esac
-        fi
-    fi
+    [[ -f "${PERFCFG}" ]] && grep -q "\"${pkg}\"[[:space:]]*:" "${PERFCFG}"
 }
 
-has_app_perf_config() {
-    local pkg="$1"
-    if [[ -f "${PERF_CONFIG_FILE}" ]]; then
-        grep -q "\"${pkg}\"[[:space:]]*:" "${PERF_CONFIG_FILE}" && return 0
-    fi
-    return 1
-}
-
-apply_scheduler() {
-    local scheduler="$1"
-    if [[ -n "${scheduler}" ]]; then
-        for f in /sys/block/*/queue/scheduler; do
-            echo "${scheduler}" > "${f}" 2>/dev/null
-        done
-    fi
-}
-
-apply_readahead() {
-    local readahead="$1"
-    if [[ -n "${readahead}" ]] && [[ "${readahead}" -gt 0 ]] 2>/dev/null; then
-        for f in /sys/block/*/queue/read_ahead_kb; do
-            echo "${readahead}" > "${f}" 2>/dev/null
-        done
-    fi
-}
-
-apply_governor() {
-    local governor="$1"
-    if [[ -n "${governor}" ]]; then
-        for f in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
-            echo "${governor}" > "${f}" 2>/dev/null
-        done
-    fi
-}
-
-get_default_perf_config() {
+get_def_perf() {
     local key="$1"
-    if [[ -f "${PERF_CONFIG_FILE}" ]]; then
-        local block
-        block=$(extract_app_block "${PERF_CONFIG_FILE}" "default")
-        if [[ -n "${block}" ]]; then
-            case "${key}" in
-                scheduler)
-                    echo "${block}" | grep -o '"scheduler"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*:[ ]*"\([^"]*\)".*/\1/'
-                    ;;
-                readahead)
-                    echo "${block}" | grep -o '"readahead"[[:space:]]*:[[:space:]]*[0-9]*' | grep -o '[0-9]*$'
-                    ;;
-                governor)
-                    echo "${block}" | grep -o '"governor"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*:[ ]*"\([^"]*\)".*/\1/'
-                    ;;
-            esac
-        fi
-    fi
+    [[ ! -f "${PERFCFG}" ]] && return
+    local block=$(extract_block "${PERFCFG}" "default")
+    [[ -z "${block}" ]] && return
+    case "${key}" in
+        sched)
+            echo "${block}" | grep -o '"scheduler"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*:[ ]*"\([^"]*\)".*/\1/'
+            ;;
+        readahead)
+            echo "${block}" | grep -o '"readahead"[[:space:]]*:[[:space:]]*[0-9]*' | grep -o '[0-9]*$'
+            ;;
+        gov)
+            echo "${block}" | grep -o '"governor"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*:[ ]*"\([^"]*\)".*/\1/'
+            ;;
+    esac
 }
 
-restore_default_perf() {
+apply_def_perf() {
     read_settings
-    if [[ "${PERF_DEFAULT_ENABLED}" != "1" ]]; then
-        return
-    fi
-    local def_scheduler
-    local def_readahead
-    local def_governor
-    def_scheduler=$(get_default_perf_config "scheduler")
-    def_readahead=$(get_default_perf_config "readahead")
-    def_governor=$(get_default_perf_config "governor")
-    [[ -n "${def_scheduler}" ]] && apply_scheduler "${def_scheduler}"
-    [[ -n "${def_readahead}" ]] && [[ "${def_readahead}" -gt 0 ]] 2>/dev/null && apply_readahead "${def_readahead}"
-    [[ -n "${def_governor}" ]] && apply_governor "${def_governor}"
+    [[ "${PERF_DEF}" != "1" ]] && return
+    local s=$(get_def_perf "sched")
+    local r=$(get_def_perf "readahead")
+    local g=$(get_def_perf "gov")
+    [[ -n "$s" ]] && apply_sched "$s"
+    [[ -n "$r" ]] && [[ "$r" -gt 0 ]] 2>/dev/null && apply_readahead "$r"
+    [[ -n "$g" ]] && apply_gov "$g"
 }
 
 perf_daemon() {
-    local LAST_PERF_PKG=""
+    local LAST_PKG="" LAST_OIFACE=""
     while true; do
-        local interval
-        interval=$(get_perf_interval)
-        sleep "${interval}"
+        sleep "$(get_perf_int)"
         read_settings
-        if [[ "${PERF_APP_ENABLED}" != "1" ]]; then
-            if [[ -n "${LAST_PERF_PKG}" ]]; then
-                restore_default_perf
-                LAST_PERF_PKG=""
+        if [[ "${PERF_APP}" != "1" ]]; then
+            if [[ -n "${LAST_PKG}" ]]; then
+                restore_perf
+                [[ "${LAST_OIFACE}" == "1" ]] && [[ "${OIFACE_SMART}" != "1" ]] && [[ "${OIFACE_OFF}" != "1" ]] && set_oiface "on" "性能配置:关闭"
+                LAST_PKG=""
+                LAST_OIFACE=""
+                log "[性能配置] 功能关闭,已恢复原始状态"
             fi
             continue
         fi
-        local FG_PKG
-        FG_PKG=$(get_foreground_package)
-        if [[ -z "${FG_PKG}" ]]; then
-            continue
-        fi
-        if [[ "${FG_PKG}" != "${LAST_PERF_PKG}" ]]; then
-            if has_app_perf_config "${FG_PKG}"; then
-                local app_scheduler
-                local app_readahead
-                local app_governor
-                local app_disable_oiface
-                app_scheduler=$(get_app_perf_config "${FG_PKG}" "scheduler")
-                app_readahead=$(get_app_perf_config "${FG_PKG}" "readahead")
-                app_governor=$(get_app_perf_config "${FG_PKG}" "governor")
-                app_disable_oiface=$(get_app_perf_config "${FG_PKG}" "disableOiface")
-                [[ -n "${app_scheduler}" ]] && apply_scheduler "${app_scheduler}"
-                [[ -n "${app_readahead}" ]] && [[ "${app_readahead}" -gt 0 ]] 2>/dev/null && apply_readahead "${app_readahead}"
-                [[ -n "${app_governor}" ]] && apply_governor "${app_governor}"
-                if [[ "${app_disable_oiface}" == "1" ]] && [[ "${OIFACE_SMART}" != "1" ]] && [[ "${OIFACE_DISABLED}" != "1" ]]; then
-                    set_oiface_state "off" "性能配置:${FG_PKG}"
+        local fg=$(get_fg_pkg)
+        [[ -z "${fg}" ]] && continue
+        if [[ "${fg}" != "${LAST_PKG}" ]]; then
+            if has_app_perf "${fg}"; then
+                local s=$(get_app_perf "${fg}" "sched")
+                local r=$(get_app_perf "${fg}" "readahead")
+                local g=$(get_app_perf "${fg}" "gov")
+                local d=$(get_app_perf "${fg}" "disable_oiface")
+                [[ -n "$s" ]] && apply_sched "$s"
+                [[ -n "$r" ]] && [[ "$r" -gt 0 ]] 2>/dev/null && apply_readahead "$r"
+                [[ -n "$g" ]] && apply_gov "$g"
+                if [[ "$d" == "1" ]] && [[ "${OIFACE_OFF}" != "1" ]]; then
+                    set_oiface "off" "性能配置:${fg}"
                 fi
-                log_msg "[性能配置] 已应用: ${FG_PKG}"
+                LAST_OIFACE="$d"
+                log "[性能配置] 已应用: ${fg}"
             else
-                if [[ -n "${LAST_PERF_PKG}" ]] && has_app_perf_config "${LAST_PERF_PKG}"; then
-                    restore_default_perf
-                    local last_disable=$(get_app_perf_config "${LAST_PERF_PKG}" "disableOiface")
-                    if [[ "${last_disable}" == "1" ]] && [[ "${OIFACE_SMART}" != "1" ]] && [[ "${OIFACE_DISABLED}" != "1" ]]; then
-                        set_oiface_state "on" "性能配置:恢复默认"
-                    fi
-                    log_msg "[性能配置] 已恢复默认配置"
+                if [[ -n "${LAST_PKG}" ]] && has_app_perf "${LAST_PKG}"; then
+                    restore_perf
+                    [[ "${LAST_OIFACE}" == "1" ]] && [[ "${OIFACE_OFF}" != "1" ]] && set_oiface "on" "性能配置:恢复"
+                    LAST_OIFACE=""
+                    log "[性能配置] 已恢复原始状态"
                 fi
             fi
-            LAST_PERF_PKG="${FG_PKG}"
+            LAST_PKG="${fg}"
         fi
     done
 }
 
 settings_daemon() {
-    local LAST_ENABLED="${ENABLED}"
-    local LAST_OIFACE_DISABLED="${OIFACE_DISABLED}"
-    local LAST_OIFACE_SMART="${OIFACE_SMART}"
+    local L_EN="${ENABLED}" L_OOFF="${OIFACE_OFF}" L_OSMART="${OIFACE_SMART}" L_PDEF="${PERF_DEF}"
     while true; do
         sleep 2
         read_settings
-        if [[ "${ENABLED}" != "${LAST_ENABLED}" ]]; then
+        if [[ "${ENABLED}" != "${L_EN}" ]]; then
             if [[ "${ENABLED}" == "1" ]]; then
                 killall AppOpt 2>/dev/null
                 sleep 1
                 nohup "${MODDIR}/AppOpt" >/dev/null 2>&1 &
-                log_msg "AppOpt 已启用并启动, PID: $!"
+                log "AppOpt 已启用, PID: $!"
             else
                 killall AppOpt 2>/dev/null
-                log_msg "AppOpt 已禁用并停止"
+                log "AppOpt 已禁用"
             fi
-            LAST_ENABLED="${ENABLED}"
+            L_EN="${ENABLED}"
         fi
         if [[ "${ENABLED}" == "1" ]]; then
-            if ! pidof AppOpt >/dev/null 2>&1; then
+            pidof AppOpt >/dev/null 2>&1 || {
                 nohup "${MODDIR}/AppOpt" >/dev/null 2>&1 &
-                log_msg "AppOpt 意外停止, 已重新启动, PID: $!"
-            fi
+                log "AppOpt 重启, PID: $!"
+            }
         fi
-        if [[ "${OIFACE_DISABLED}" != "${LAST_OIFACE_DISABLED}" ]]; then
-            if [[ "${OIFACE_DISABLED}" == "1" ]]; then
-                set_oiface_state "off" "全局禁用"
-            else
-                set_oiface_state "on" "全局启用"
-            fi
-            LAST_OIFACE_DISABLED="${OIFACE_DISABLED}"
+        if [[ "${OIFACE_OFF}" != "${L_OOFF}" ]]; then
+            [[ "${OIFACE_OFF}" == "1" ]] && set_oiface "off" "全局禁用" || set_oiface "on" "全局启用"
+            L_OOFF="${OIFACE_OFF}"
         fi
-        if [[ "${OIFACE_SMART}" != "${LAST_OIFACE_SMART}" ]]; then
+        if [[ "${OIFACE_SMART}" != "${L_OSMART}" ]]; then
             if [[ "${OIFACE_SMART}" == "1" ]]; then
-                log_msg "智能OiFace模式已启用"
+                log "智能OiFace已启用"
             else
-                if [[ "$(get_oiface_state)" == "off" ]] && [[ "${OIFACE_DISABLED}" != "1" ]]; then
-                    set_oiface_state "on" "智能模式关闭"
-                fi
-                log_msg "智能OiFace模式已禁用"
+                [[ "$(get_oiface)" == "off" ]] && [[ "${OIFACE_OFF}" != "1" ]] && set_oiface "on" "智能模式关闭"
+                log "智能OiFace已禁用"
             fi
-            LAST_OIFACE_SMART="${OIFACE_SMART}"
+            L_OSMART="${OIFACE_SMART}"
+        fi
+        if [[ "${PERF_DEF}" != "${L_PDEF}" ]]; then
+            if [[ "${PERF_DEF}" == "1" ]]; then
+                apply_def_perf
+                log "默认性能配置已启用"
+            else
+                restore_perf
+                log "默认性能配置已禁用,恢复原始状态"
+            fi
+            L_PDEF="${PERF_DEF}"
         fi
     done
 }
 
 smart_oiface_daemon() {
-    local counter=0
+    local cnt=0
     while true; do
         sleep 1
         read_settings
-        if [[ "${OIFACE_SMART}" == "1" ]] && [[ "${OIFACE_DISABLED}" != "1" ]]; then
-            counter=$((counter + 1))
-            if [[ "${counter}" -ge "${OIFACE_INTERVAL}" ]]; then
-                counter=0
-                local FG_PKG
-                FG_PKG=$(get_foreground_package)
-                if [[ -n "${FG_PKG}" ]]; then
-                    if is_package_in_rules "${FG_PKG}"; then
-                        set_oiface_state "off" "智能模式:${FG_PKG}"
-                    else
-                        set_oiface_state "on" "智能模式:非规则应用"
-                    fi
+        if [[ "${OIFACE_SMART}" == "1" ]] && [[ "${OIFACE_OFF}" != "1" ]] && [[ "${PERF_APP}" != "1" ]]; then
+            cnt=$((cnt + 1))
+            if [[ "${cnt}" -ge "${OIFACE_INT}" ]]; then
+                cnt=0
+                local fg=$(get_fg_pkg)
+                if [[ -n "${fg}" ]]; then
+                    in_rules "${fg}" && set_oiface "off" "智能:${fg}" || set_oiface "on" "智能:非规则"
                 fi
             fi
         else
-            counter=0
+            cnt=0
         fi
     done
 }
 
-wait_sys_boot_completed
+wait_boot
 cd "${MODDIR}" || exit 1
 
-mkdir -p "${CONFIG_DIR}"
+mkdir -p "${CFGDIR}"
 init_runtime
-update_device_info
+save_orig_state
+update_devinfo
 
-echo "" > "${LOG_FILE}"
-log_msg "星核线程服务启动中"
+echo "" > "${LOG}"
+log "星核线程服务启动"
 
 read_settings
 
-apply_io_config
-log_msg "IO配置已应用"
+apply_io_cfg
+log "IO配置已应用"
 
-apply_process_priority
-log_msg "进程优先级已应用"
+apply_proc_prio
+log "进程优先级已应用"
 
-priority_daemon &
-log_msg "优先级守护进程已启动"
+prio_daemon &
+log "优先级守护已启动"
 
 if [[ "${ENABLED}" == "1" ]] && [[ -f "${MODDIR}/AppOpt" ]]; then
     chmod +x "${MODDIR}/AppOpt"
     nohup "${MODDIR}/AppOpt" >/dev/null 2>&1 &
-    log_msg "AppOpt 已启动, PID: $!"
+    log "AppOpt 已启动, PID: $!"
 else
-    log_msg "AppOpt 未启动 (enabled=${ENABLED})"
+    log "AppOpt 未启动 (enabled=${ENABLED})"
 fi
 
-log_msg "正在解锁CPU核心..."
-for MAX_CPUS in /sys/devices/system/cpu/cpu*/core_ctl/max_cpus; do
-    if [[ -e "${MAX_CPUS}" ]] && [[ "$(cat "${MAX_CPUS}")" != "$(cat "${MAX_CPUS%/*}/min_cpus")" ]]; then
-        chmod a+w "${MAX_CPUS%/*}/min_cpus"
-        echo "$(cat "${MAX_CPUS}")" > "${MAX_CPUS%/*}/min_cpus"
-        chmod a-w "${MAX_CPUS%/*}/min_cpus"
-    fi
+log "正在解锁CPU核心..."
+for f in /sys/devices/system/cpu/cpu*/core_ctl/max_cpus; do
+    [[ ! -e "$f" ]] && continue
+    maxv=$(cat "$f")
+    minf="${f%/*}/min_cpus"
+    [[ "$(cat "$minf")" == "$maxv" ]] && continue
+    chmod a+w "$minf"
+    echo "$maxv" > "$minf"
+    chmod a-w "$minf"
 done
-log_msg "CPU核心解锁完成"
+log "CPU核心解锁完成"
 
-if [[ "${OIFACE_DISABLED}" == "1" ]]; then
-    set_oiface_state "off" "启动时全局禁用"
-fi
+[[ "${OIFACE_OFF}" == "1" ]] && set_oiface "off" "启动时全局禁用"
 
 settings_daemon &
-log_msg "设置监控守护进程已启动"
+log "设置监控已启动"
 
 smart_oiface_daemon &
-log_msg "智能OiFace守护进程已启动"
+log "智能OiFace已启动"
 
 perf_daemon &
-log_msg "性能配置守护进程已启动"
+log "性能配置守护已启动"
 
-log_msg "服务初始化完成"
+log "服务初始化完成"
